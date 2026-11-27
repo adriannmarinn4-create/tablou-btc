@@ -109,7 +109,11 @@ async function cere(url, { tip = 'json', incercari = 3, timeout = 30000 } = {}) 
 async function primaReusita(ce, variante) {
   const err = [];
   for (const [sursa, f] of variante) {
-    try { return { ...(await f()), sursa }; } catch (e) { err.push(`${sursa}: ${e.message}`); }
+    try {
+      const r = { ...(await f()), sursa };
+      if (err.length) log(`${ce}: am folosit ${sursa}, după ${err.join(' | ')}`);
+      return r;
+    } catch (e) { err.push(`${sursa}: ${e.message}`); }
   }
   throw new Error(`${ce} — ${err.join(' | ')}`);
 }
@@ -566,7 +570,9 @@ function modulCapitalizare(D) {
   const s2 = cap < 0.6 * v[iAth] ? 1 : 0;
   const scor = medieScoruri([s1, s2]);
   const i30 = indexLa(z, T - 30 * ZI);
-  const real = D.cm.CapRealUSD?.v?.at(-1) ?? null;
+  // capitalizarea realizată nu e în planul gratuit Coin Metrics; o scot din MVRV = capitalizare / realizată
+  const mvC = D.cm.CapMVRVCur?.v;
+  const real = D.cm.CapRealUSD?.v?.at(-1) ?? (mvC?.length ? C.v.at(-1) / mvC.at(-1) : null);
   const abateri = [];
   for (let i = n - 1; i >= n - 365 && i >= 0; i -= 7) if (m200[i]) abateri.push([zg(z[i]), rot((v[i] / m200[i] - 1) * 100, 1)]);
   abateri.reverse();
@@ -806,7 +812,7 @@ async function principal() {
   const [rPret, rCm, rCm2, rCurs, rMp, rDvol, rFng, rFund, rStable, rPap, rNod] = await Promise.allSettled([
     sursaPret(),
     coinMetricsSigur(['PriceUSD', 'CapMrktCurUSD', 'SplyCur']),
-    coinMetricsSigur(['CapMVRVCur', 'CapRealUSD', 'IssTotUSD'], '2012-01-01'),
+    coinMetricsSigur(['CapMVRVCur', 'IssTotUSD'], '2012-01-01'),
     sursaCurs(), sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
   ]);
   const ok = (r, nume) => { if (r.status === 'fulfilled') { log(`✓ ${nume}`); return r.value; } log(`✗ ${nume}: ${r.reason?.message}`); return null; };
