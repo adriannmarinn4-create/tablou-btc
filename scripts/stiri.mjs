@@ -57,10 +57,10 @@ export const CATEGORII = [
   { id: 'etf', nume: 'ETF', impact: 'mare', re: [/\bETF[sS]?\b|\bETP[sS]?\b|\bIBIT\b|\bFBTC\b|\bGBTC\b|\bARKB\b|\bBITB\b/, /spot bitcoin funds?|bitcoin funds?\b/i] },
   { id: 'fed', nume: 'Fed', impact: 'mare', re: [/\bFed\b|\bFOMC\b|\bPowell\b|\bWarsh\b|\bCPI\b|\bPCE\b|\bNFP\b/, /federal reserve|interest[- ]rates?|\brate (?:hike|cut|decision)s?\b|\binflation\b|jobs report|payrolls|treasury yields?|bond yields?/i] },
   { id: 'reglementare', nume: 'Reglementare', impact: 'mare', re: [/\bSEC\b|\bCFTC\b|\bMiCA\b|\bIRS\b|\bOCC\b|\bFDIC\b|\bAct\b/, /regulat|legislat|lawmakers?|\bsenate\b|\bcongress|\bbill\b|\blaws?\b|\blawsuits?\b|\bcourt\b|\bjudge\b|\bban(?:s|ned)?\b|\btax(?:es|ation)?\b|sanction|strategic (?:bitcoin )?reserve|bitcoin reserve/i] },
+  { id: 'securitate', nume: 'Securitate', impact: 'mediu', re: [/\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\btheft\b|\bthie(?:f|ves)\b|\bhijack(?:s|ed|ing)?\b|\bbreach(?:es|ed)?\b|\bdrained\b|\bscams?\b|phishing|vulnerab|\bquantum\b|\battack(?:s|ed|ers?)?\b|ransomware|laundering|\bseiz(?:e|es|ed|ure)\b|forfeit/i] },
   { id: 'companii', nume: 'Companii', impact: 'mediu', re: [/\bSaylor\b|\bMicroStrategy\b|\bMSTR\b|\bMetaplanet\b|\bStrive\b|\bTwenty One\b|\bNakamoto\b|\bSemler\b|\bGameStop\b|\bTrump Media\b/, STRATEGY, /treasury compan|corporate treasur|bitcoin treasur|digital asset treasur/i] },
   { id: 'mineri', nume: 'Mineri', impact: 'mediu', re: [/\bminers?\b|\bmining\b|hash ?rate|hashprice|\bdifficulty\b/i, /\bMARA\b|\bRiot\b|CleanSpark|Bitfarms|Core Scientific|\bIREN\b|Cipher Mining|\bHut 8\b|TeraWulf|Bitdeer|\bCanaan\b|Bitmain/] },
   { id: 'banci', nume: 'Bănci', impact: 'mediu', re: [/\bbanks?\b|\bbanking\b/i, /JPMorgan|\bJ\.?P\.? Morgan\b|Goldman|\bCiti(?:group|bank)?\b|Morgan Stanley|Standard Chartered|Bank of America|\bBofA\b|\bHSBC\b|Wells Fargo|Deutsche Bank|\bUBS\b|Barclays|Bernstein|\bBNY\b|State Street|Fidelity|Vanguard|Schwab|BlackRock/] },
-  { id: 'securitate', nume: 'Securitate', impact: 'mediu', re: [/\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\btheft\b|\bthieves\b|\bbreach(?:es|ed)?\b|\bdrained\b|\bscams?\b|phishing|vulnerab|\bquantum\b|\battack(?:s|ed|ers?)?\b|ransomware|laundering|\bseiz(?:e|es|ed|ure)\b|forfeit/i] },
 ];
 const BTC = /\bbitcoin\b|\bBTC\b/i;
 const ALT = /\b(?:Ether(?:eum)?|ETH|Solana|SOL|XRP|Ripple|Dogecoin|DOGE|Cardano|ADA|Litecoin|LTC|Avalanche|AVAX|Chainlink|LINK|SUI|HBAR|Hedera|Polkadot|DOT|Tron|TRX|BNB|TON|Toncoin|Shiba|SHIB|PEPE|Monero|XMR|Aptos|Arbitrum|Polygon|MATIC|Stellar|XLM|NEAR|Hyperliquid|HYPE|Zcash|ZEC|Ethena|Uniswap|Aave|[Mm]emecoins?|[Aa]ltcoins?)\b/;
@@ -98,8 +98,8 @@ const CUVINTE = [
   [-1, /\bhikes?\b|\bhiked\b|\bhawkish\b|\btighten(?:s|ing)?\b|\bhot(?:ter)?\b/gi],
   [-1, /\bdowngrade[sd]?\b|\bbearish\b|\bwarn(?:s|ed|ing|ings)?\b|\bcuts?\b|\bslash(?:es|ed)?\b/gi],
   [-1, /\bban(?:s|ned)?\b|\bcrackdown\b|\blawsuits?\b|\bsue[sd]?\b|\bcharged\b|\bprobe\b|\binvestigat(?:e|es|ed|ion)\b|\breject(?:s|ed|ion)?\b|\bdelay(?:s|ed)?\b|\bfined\b|\bpenalt(?:y|ies)\b/gi],
-  [-1, /\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\bsteal(?:s|ing)?\b|\btheft\b|\bthie(?:f|ves)\b|\bdrain(?:s|ed)?\b|\bbreach(?:es|ed)?\b|\bscams?\b|\battack(?:s|ed|ers?)?\b|\bfreez(?:e|es|ing)\b|\bfrozen\b|\bmeltdown\b/gi],
-  [-1, /\bplung(?:e|es|ed|ing)\b|\bcrash(?:es|ed)?\b|\btumbl(?:e|es|ed)\b|\bslump(?:s|ed)?\b|\bslid(?:e|es)?\b|\bsinks?\b|\bsank\b|\bdrops?\b|\bdropped\b|\bfall(?:s|ing)?\b|\bfell\b|\bdeclin(?:e|es|ed|ing)\b|\bfears?\b|\bcollaps(?:e|es|ed)\b|\bbankrupt(?:cy)?\b|\binsolven(?:t|cy)\b|\bworst\b|\bstress\b|\bweak(?:ens?|er|ness)?\b/gi],
+  [-1, /\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\bsteal(?:s|ing)?\b|\btheft\b|\bthie(?:f|ves)\b|\bdrain(?:s|ed)?\b|\bbreach(?:es|ed)?\b|\bscams?\b|\battack(?:s|ed|ers?)?\b|\bfreez(?:e|es|ing)\b|\bfrozen\b|\bmeltdown\b|\bhijack(?:s|ed|ing)?\b/gi],
+  [-1, /\bplung(?:e|es|ed|ing)\b|\bcrash(?:es|ed)?\b|\btumbl(?:e|es|ed)\b|\bslump(?:s|ed)?\b|\bslid(?:e|es)?\b|\bsinks?\b|\bsank\b|\bdrops?\b|\bdropped\b|\bfall(?:s|ing)?\b|\bfell\b|\bdeclin(?:e|es|ed|ing)\b|\bfears?\b|\bcollaps(?:e|es|ed)\b|\bbankrupt(?:cy)?\b|\binsolven(?:t|cy)\b|\bworst\b|\bstress\b|\bweak(?:ens?|er|ness)?\b|\bhammered\b|\brout\b|\bsqueez(?:e|es|ed|ing)\b/gi],
   [+1, /\binflows?\b|\badd(?:s|ed|ing)?\b(?=(?:\s+\S+){0,3}?\s+(?:bitcoin|BTC)\b)|\battract(?:s|ed)?\b|\badvanc(?:e|es|ed)\b/gi],
   [+1, /\bbuy(?:s|ing|ers)?\b|\bbought\b|\bpurchas(?:e|es|ed)\b|\bacquir(?:e|es|ed)\b|\baccumulat(?:e|es|ed|ing|ion)\b|\bscoop(?:s|ed)?\b/gi],
   [+1, /\bdovish\b|\beas(?:e|es|ing)\b|\bcool(?:s|ing|er|ed)?\b/gi],
@@ -198,7 +198,7 @@ export function modulStiri(toate, T, { semn, scorTxt }) {
   return {
     scor, eticheta, detaliu: parti.join(' · ') || 'nicio știre relevantă',
     valori: { ore: ORE_SCOR, relevante: r.length, negative: neg, pozitive: poz, mixte: mix, neutre: neu, medie: Math.round(M * 100) / 100, stiri: afisate },
-    regula: 'aceeași poveste de la mai multe site-uri contează o dată · categoria din cuvinte-cheie în titlu (ETF, Fed și reglementare = impact mare; companii, mineri, bănci și securitate = impact mediu) · sensul din liste fixe de cuvinte (outflows, sell, hike, hack… = negativ; inflows, buy, rate cut, approve… = pozitiv; ambele = mixtă) · scorul = 2 × media pe 48 de ore, impactul mare contează dublu · sub 3 știri → 0',
+    regula: 'aceeași poveste de la mai multe site-uri contează o dată · categoria din cuvinte-cheie în titlu (ETF, Fed și reglementare = impact mare; securitate, companii, mineri și bănci = impact mediu) · sensul din liste fixe de cuvinte (outflows, sell, hike, hack… = negativ; inflows, buy, rate cut, approve… = pozitiv; ambele = mixtă) · scorul = 2 × media pe 48 de ore, impactul mare contează dublu · sub 3 știri → 0',
     concluzie, surse: `RSS gratuite: ${FLUXURI.map(f => f[0]).join(', ')} (titlurile rămân în engleză)`,
   };
 }

@@ -702,7 +702,7 @@ ${titluStire(s)}<div class="chipuri">${chip(s.catNume)}${chip(SENS[s.tip][1], SE
     if (!m || m.stare === 'lipsa') card9 = `<section class="card card-gol"><div class="antet">${insigna('9')}<h2>Știri importante</h2></div><p class="nota">Fluxurile de știri nu au răspuns acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
     else {
       const st = m.valori.stiri;
-      const ORD = ['etf', 'fed', 'reglementare', 'companii', 'mineri', 'banci', 'securitate'];
+      const ORD = ['etf', 'fed', 'reglementare', 'securitate', 'companii', 'mineri', 'banci'];
       const cats = [...new Map(st.map(s => [s.cat, s.catNume])).entries()].sort((a, b) => ORD.indexOf(a[0]) - ORD.indexOf(b[0]));
       if (FILTRU !== 'toate' && FILTRU !== 'mare' && !cats.some(c => c[0] === FILTRU)) FILTRU = 'toate';
       filtre = `<nav class="cipuri-bara" aria-label="Filtre">${[['toate', 'Toate'], ['mare', 'Impact mare'], ...cats].map(([k, t]) => `<button type="button" class="cip${FILTRU === k ? ' activ' : ''}" data-act="filtru" data-f="${esc(k)}" aria-pressed="${FILTRU === k}">${FILTRU === k ? ICON.bifa : ''}${esc(t)}</button>`).join('')}</nav>`;
