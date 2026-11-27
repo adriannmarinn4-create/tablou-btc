@@ -124,7 +124,7 @@ h1, h2, h3 { margin: 0; }
 .tabel th, .tabel td { padding: 6px 0; text-align: left; font-weight: 500; }
 .tabel thead th { font-size: 12px; color: var(--muted); padding-top: 0; }
 .tabel tbody tr + tr, .tabel tbody tr:first-child { border-top: 1px solid var(--border); }
-.tabel .dr { text-align: right; }
+.tabel .dr { text-align: right; padding-left: 10px; }
 .tabel td.num { font-weight: 600; }
 .randamente td { font-family: 'Space Grotesk', sans-serif; }
 .benzi td { padding: 5px 0; }
@@ -135,6 +135,31 @@ h1, h2, h3 { margin: 0; }
 .verif { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 2px 0; }
 .verif span { flex: 1; min-width: 0; }
 .verif svg { flex: none; }
+
+.tabel tr.acum { background: rgba(247, 147, 26, .1); }
+
+/* Știri */
+button.cip { background: none; font-family: inherit; cursor: pointer; }
+button.cip.activ { background: var(--accent-bg); }
+.rezumat { display: flex; justify-content: space-between; gap: 4px 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.stiri { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.stire { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 1px solid var(--border); }
+.stire-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.stire-titlu { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+a.stire-titlu:active { color: var(--accent); }
+.stire-concl { margin: 0; font-size: 13px; line-height: 1.45; color: var(--soft); }
+.stire-regula { margin: 0; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.sub-titlu { font-size: 13px; font-weight: 600; color: var(--soft); margin-top: 4px; }
+.infl { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 34px; height: 34px; border-radius: 17px; background: #2A3240; color: var(--soft); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+
+/* Pariuri */
+.pariu { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 46px; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.pariu-et { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pariu-bara { height: 8px; border-radius: 4px; background: #2A3240; overflow: hidden; }
+.pariu-bara i { display: block; height: 100%; border-radius: 4px; background: var(--c); }
+.pariu strong { text-align: right; font-weight: 600; }
+.ev-pariuri { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; line-height: 1.45; color: var(--soft); text-decoration: none; }
 
 /* Calendar */
 .evenimente { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

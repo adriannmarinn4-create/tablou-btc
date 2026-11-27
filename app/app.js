@@ -178,12 +178,15 @@
 <path d="M75,78 L${x},${y}" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/><circle cx="75" cy="78" r="5" fill="#FFFFFF"/></svg>`;
   }
   const NUME_PLACI = { 2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu', 6: 'ETF', 7: 'Macro', 8: 'Sentiment', 19: 'Volatilitate', 20: 'Derivate', 28: 'Stablecoins' };
-  const ETAPA = { 6: 'etapa 2', 7: 'etapa 3', 9: 'etapa 2', 20: 'etapa 3', 24: 'etapa 2' };
+  const ETAPA = { 6: 'etapa 3', 7: 'etapa 3', 20: 'etapa 3' };
+  const PAGINA = { 6: '6', 7: '7', 20: '19' }; // unde duce o placă încă goală
   function placa(nr) {
     const m = modul(nr);
-    if (!m || m.stare === 'lipsa') {
-      const viitor = ETAPA[nr];
-      return `<div class="placa placa-gol">${`<span class="placa-cap">${insigna(nr)}<span class="placa-nume">${esc(NUME_PLACI[nr])}</span></span>`}<span class="placa-val gri">${viitor ? 'În curând' : 'Indisponibil'}</span><span class="placa-det">${viitor ? `vine în ${viitor}` : 'sursa nu răspunde'}</span></div>`;
+    if (!m || m.stare === 'lipsa' || (m.partial && !fin(m.scor))) {
+      const viitor = ETAPA[nr], dest = PAGINA[nr];
+      const det = m?.partial ? m.detaliu : viitor ? `vine în ${viitor}` : 'sursa nu răspunde';
+      const cap = `<span class="placa-cap">${insigna(nr)}<span class="placa-nume">${esc(NUME_PLACI[nr])}</span></span><span class="placa-val gri">${viitor ? 'În curând' : 'Indisponibil'}</span><span class="placa-det">${esc(det)}</span>`;
+      return dest ? `<a class="placa placa-gol" href="#grafice/${dest}">${cap}</a>` : `<div class="placa placa-gol">${cap}</div>`;
     }
     const cl = tipScor(m.scor);
     return `<a class="placa" href="#grafice/${nr}"><span class="placa-cap">${insigna(nr)}<span class="placa-nume">${esc(NUME_PLACI[nr])}</span>${chipScor(m.scor)}</span><span class="placa-val ${cl}">${esc(m.eticheta)}</span><span class="placa-det">${esc(m.detaliu)}</span>${m.stare === 'vechi' ? '<span class="placa-vechi">date vechi</span>' : ''}</a>`;
@@ -201,11 +204,14 @@
     const termo = L.termometru;
     const placiLung = ['2', '3', '4', '15', '16', '17'].map(placa).join('');
     const placiScurt = ['6', '7', '8', '20', '19', '28'].map(placa).join('');
-    const stiri = `<div class="placa-rand placa-gol">${insigna('9')}<span class="pr-txt"><span class="pr-t">Știri, ultimele 48 de ore</span><span class="pr-s">vin în etapa 2</span></span></div>`;
-    const info = [['18', 'Randamente'], ['24', 'Pariuri (Polymarket)'], ['25', 'Rețea']].map(([nr, t]) => {
+    const m9 = modul('9');
+    const stiri = !m9 || m9.stare === 'lipsa'
+      ? `<div class="placa-rand placa-gol">${insigna('9')}<span class="pr-txt"><span class="pr-t">Știri, ultimele 48 de ore</span><span class="pr-s">fluxurile de știri nu au răspuns</span></span></div>`
+      : `<a class="placa-rand" href="#stiri">${insigna('9')}<span class="pr-txt"><span class="pr-t">Știri, ultimele 48 de ore</span><span class="pr-s">${esc(m9.detaliu)}${m9.stare === 'vechi' ? ' · date vechi' : ''}</span></span>${chipScor(m9.scor)}</a>`;
+    const info = [['18', 'Randamente', '18'], ['24', 'Pariuri (Polymarket)', '7'], ['25', 'Rețea', '25']].map(([nr, t, dest]) => {
       const m = modul(nr);
       if (!m || m.stare === 'lipsa') return `<div class="info-rand info-gol">${insigna(nr)}<span class="pr-txt"><span class="pr-t">${esc(t)}</span><span class="pr-s">${ETAPA[nr] ? `vine în ${ETAPA[nr]}` : 'indisponibil acum'}</span></span></div>`;
-      return `<a class="info-rand" href="#grafice/${nr}">${insigna(nr)}<span class="pr-txt"><span class="pr-t">${esc(t)}</span><span class="pr-s">${esc(nr === '18' ? m.eticheta : m.detaliu)}</span></span>${ICON.sageata}</a>`;
+      return `<a class="info-rand" href="#grafice/${dest}">${insigna(nr)}<span class="pr-txt"><span class="pr-t">${esc(t)}</span><span class="pr-s">${esc(nr === '18' ? m.eticheta : m.detaliu)}</span></span>${ICON.sageata}</a>`;
     }).join('');
     return `<header class="bara"><svg width="28" height="28" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="15" r="15" fill="#F7931A"/><text x="15" y="20.5" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="16" fill="#0E1116">₿</text></svg><h1 style="margin-left:8px">Tablou BTC</h1>
 <button type="button" class="btn-icon" data-act="despre" aria-label="Despre aplicație">${ICON.info}</button><button type="button" class="btn-icon" data-act="reimprospateaza" aria-label="Reîmprospătează">${ICON.reimprospateaza}</button></header>
@@ -233,7 +239,8 @@ ${stiri}
   }
 
   // ------------------------------------------------------------ ecranele de grafice
-  const CIPURI = [['2', 'Curcubeu'], ['16', 'Power Law'], ['15', 'Capitalizare'], ['3', 'On-chain'], ['17', 'Ciclu'], ['18', 'Randamente'], ['4', 'Mineri'], ['25', 'Rețea'], ['28', 'Stablecoins'], ['19', 'Derivate'], ['8', 'Sentiment']];
+  const CIPURI = [['2', 'Curcubeu'], ['16', 'Power Law'], ['15', 'Capitalizare'], ['3', 'On-chain'], ['17', 'Ciclu'], ['18', 'Randamente'], ['4', 'Mineri'], ['25', 'Rețea'], ['6', 'ETF'], ['28', 'Stablecoins'], ['19', 'Derivate'], ['8', 'Sentiment'], ['7', 'Macro']];
+  const FARA_DATE = new Set(['6', '7']); // pagini care se desenează și când modulul lipsește
 
   const RAND = {};
 
@@ -632,12 +639,49 @@ ${grila([
 ${regula(m)}`);
   };
 
+  const cota = p => (!fin(p) ? '—' : p < 1 ? '<1%' : `${nf(p)}%`);
+  const ziLuna = t => { const p = parti(t); return `${p.zi} ${LS[p.luna]}`; };
+  const linkSigur = u => (/^https?:\/\//i.test(u || '') ? u : null);
+
+  RAND['6'] = m => {
+    const secEtf = `<section class="card card-gol"><div class="antet">${insigna('6')}<h2>ETF spot din SUA</h2>${chip('etapa 3')}</div><p class="nota">Fluxurile zilnice ale ETF-urilor (IBIT, FBTC, GBTC și celelalte) dau scorul modulului: ieșiri de peste 1 mld $ în 10 sesiuni înseamnă −2. Farside blochează serverele GitHub, iar sursa oficială gratuită, SoSoValue, cere o cheie gratuită, așa că fluxurile vin în etapa 3, cu celelalte chei.</p></section>`;
+    const c = m?.valori?.companii;
+    if (!c) return `${secEtf}<section class="card card-gol"><div class="antet">${insigna('6')}<h2>Companii-trezorerie</h2></div><p class="nota">CoinGecko nu a răspuns acum. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    const s = c.strategy;
+    const randuri = c.top.map(x => `<tr${x.simbol === 'MSTR' ? ' class="acum"' : ''}><td>${esc(x.nume)}${x.simbol ? ` <span class="gri-txt">${esc(x.simbol)}</span>` : ''}</td><td class="dr num">${nf(x.btc)}</td><td class="dr gri-txt">${nf((x.btc / c.total) * 100, 1)}%</td></tr>`).join('');
+    const schimbare = fin(c.ch30) ? chip(`${semn(c.ch30)} BTC în 30 z`, c.ch30 < 0 ? 'unfav' : 'fav') : fin(c.ch7) ? chip(`${semn(c.ch7)} BTC în 7 z`, c.ch7 < 0 ? 'unfav' : 'fav') : chip(`istoric din ${dataScurta(Date.parse(c.deLa))}`);
+    let svg = '';
+    if (c.istoric.length >= 7) {
+      const pts = c.istoric.map(([d, v]) => [zg(Date.parse(`${d}T00:00:00Z`)), v / 1e6]), x0 = pts[0][0], x1 = pts.at(-1)[0];
+      const [ymin, ymax] = minMax(pts, 0.2);
+      svg = cutie('BTC ținuți de companii', 'milioane BTC', grafic({ h: 90, st: 34, x: { min: x0, max: x1 }, y: { min: ymin, max: ymax }, gridY: [[ymin + (ymax - ymin) / 2, nf(ymin + (ymax - ymin) / 2, 2)]], serii: [{ pts, cul: C.alb, gros: 1.8 }], puncte: [{ x: x1, y: pts.at(-1)[1], cul: C.accent }], etX: etLuni(x0, x1, 1), label: 'BTC ținuți de companiile listate' }));
+    }
+    return secEtf + sectiune(`<div class="antet">${insigna('6')}<h2>Companii-trezorerie</h2>${chip('informativ')}</div>${mare32(`${nf(c.total)} BTC`)}
+${chipuri([fin(c.procent) ? chip(`${nf(c.procent, 1)}% din toți bitcoinii`) : '', fin(c.valoare) ? chip(mld(c.valoare)) : '', schimbare])}
+${s ? grila([stat('Strategy', `${nf(s.btc)} BTC`, fin(s.ch30) ? `${semn(s.ch30)} BTC în 30 z` : fin(s.ch7) ? `${semn(s.ch7)} BTC în 7 z` : `${nf((s.btc / c.total) * 100)}% din total`), stat('prețul față de costul ei', fin(s.fataCost) ? pct(s.fataCost) : '—', s.cost ? `cost mediu ${usd(s.cost)}` : 'costul nu e publicat', s.fataCost < 0 ? 'unfav' : s.fataCost > 0 ? 'fav' : '')]) : ''}
+${cutie('Cele mai mari', 'BTC · din total', `<table class="tabel"><tbody>${randuri}</tbody></table>`)}
+${svg}
+${regula(m)}`);
+  };
+
+  RAND['7'] = () => {
+    const sec7 = `<section class="card card-gol"><div class="antet">${insigna('7')}<h2>Macro: Fed, dolar, bursă</h2>${chip('etapa 3')}</div><p class="nota">Dobânda Fed, dolarul (DXY), randamentul pe 10 ani și S&amp;P 500 vin de la FRED, care cere o cheie gratuită. Le adaug în etapa 3; atunci rezultatul pariurilor de mai jos intră în scorul modulului.</p></section>`;
+    const m = modul('24');
+    if (!m || m.stare === 'lipsa') return `${sec7}<section class="card card-gol"><div class="antet">${insigna('24')}<h2>Ce prezic pariurile · Polymarket</h2></div><p class="nota">Polymarket nu a răspuns acum. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    const f = m.valori.fed, b = m.valori.btc;
+    const CUL = { 1: C.portocaliu, '-1': C.albastru, 0: C.galben };
+    const bara = (et, p, cul) => `<div class="pariu"><span class="pariu-et">${esc(et)}</span><span class="pariu-bara"><i style="width:${Math.max(1, Math.min(100, p))}%;--c:${cul}"></i></span><strong class="num">${cota(p)}</strong></div>`;
+    const fed = f ? cutie(`Decizia Fed din ${ziLuna(f.decizie)}`, f.volum ? `${nf(f.volum / 1e6)} mil. $ pariați` : '', f.rezultate.map(r => bara(r.eticheta, r.p, CUL[r.dir] ?? C.gri)).join('') + legenda([['patrat', C.portocaliu, 'creștere (rău pentru BTC)'], ['patrat', C.galben, 'pauză'], ['patrat', C.albastru, 'scădere (bine)']])) : '';
+    const btc = b && (b.jos.length || b.sus.length) ? cutie(`BTC până pe ${dataScurta(b.pana)}`, 'atinge pragul?', [...b.sus.slice().reverse().map(x => bara(`↑ urcă la ${usd(x.prag)}`, x.p, C.albastru)), ...b.jos.map(x => bara(`↓ coboară la ${usd(x.prag)}`, x.p, C.portocaliu))].join('')) : '';
+    return sec7 + sectiune(`${antet('24', 'Ce prezic pariurile · Polymarket', m)}${fed}${btc}${regula(m)}`);
+  };
+
   function ecranGrafice(nr) {
     if (!CIPURI.some(c => c[0] === nr)) nr = '2';
     const m = modul(nr);
     const cip = CIPURI.map(([n, t]) => `<a class="cip${n === nr ? ' activ' : ''}" href="#grafice/${n}"${n === nr ? ' aria-current="page"' : ''}>${n === nr ? ICON.bifa : ''}${esc(t)}</a>`).join('');
     let corp;
-    if (!m || m.stare === 'lipsa') corp = `<section class="card card-gol"><div class="antet">${insigna(nr)}<h2>${esc(CIPURI.find(c => c[0] === nr)[1])}</h2></div><p class="nota">Datele nu sunt disponibile acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    if ((!m || m.stare === 'lipsa') && !FARA_DATE.has(nr)) corp = `<section class="card card-gol"><div class="antet">${insigna(nr)}<h2>${esc(CIPURI.find(c => c[0] === nr)[1])}</h2></div><p class="nota">Datele nu sunt disponibile acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
     else {
       try { corp = RAND[nr](m); } catch (e) { console.error(e); corp = `<section class="card card-gol"><p class="nota">Nu am putut desena modulul ${esc(nr)}: ${esc(e.message)}</p></section>`; }
     }
@@ -645,11 +689,44 @@ ${regula(m)}`);
   }
 
   // ------------------------------------------------------------ Știri, Calendar
+  let FILTRU = 'toate';
+  const SENS = { negativ: ['unfav', '↓ negativ'], pozitiv: ['fav', '↑ pozitiv'], 'mixtă': ['neu', '↕ mixtă'], 'neutră': ['gri', '· neutră'] };
+  const titluStire = s => (linkSigur(s.link) ? `<a class="stire-titlu" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">${esc(s.titlu)}</a>` : `<div class="stire-titlu">${esc(s.titlu)}</div>`);
+  const stire = s => `<li class="stire"><div class="stire-meta"><span>${esc(s.sursa)} · ${esc(cand(s.t))}</span>${chip(`impact ${s.impact}`, s.impact === 'mare' ? 'unfav' : 'neu')}</div>
+${titluStire(s)}<div class="chipuri">${chip(s.catNume)}${chip(SENS[s.tip][1], SENS[s.tip][0])}</div>
+<p class="stire-concl">${esc(s.concluzie)}</p><p class="stire-regula">Regulă: ${esc(s.regula)}</p></li>`;
   function ecranStiri() {
-    return `${bara('Știri')}<main class="continut"><section class="card"><div class="antet">${insigna('9')}<h2>Știri importante</h2>${chip('etapa 2')}</div>
-<p class="nota">În etapa 2, sarcina programată citește titlurile din CoinDesk, Cointelegraph, The Block, Decrypt și Bitcoin Magazine și le clasifică cu reguli fixe de cuvinte-cheie: categoria (ETF, Fed, mineri, bănci, reglementare, securitate), sensul (pozitiv sau negativ) și impactul.</p>
-<p class="nota">Scorul știrilor din ultimele 48 de ore va intra în verdictul pe termen scurt. Tot aici vor apărea și influențatorii (Saylor, Warsh, Fink și ceilalți), din titlurile de presă.</p></section>
-<section class="card card-gol"><div class="antet">${insigna('10')}<h2>Influențatori · din presă</h2>${chip('etapa 2')}</div><p class="nota">Citirea de pe X costă, așa că îi urmăresc prin titlurile care îi pomenesc.</p></section></main>`;
+    const m = modul('9'), m10 = modul('10');
+    let card9;
+    let filtre = '';
+    if (!m || m.stare === 'lipsa') card9 = `<section class="card card-gol"><div class="antet">${insigna('9')}<h2>Știri importante</h2></div><p class="nota">Fluxurile de știri nu au răspuns acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    else {
+      const st = m.valori.stiri;
+      const ORD = ['etf', 'fed', 'reglementare', 'companii', 'mineri', 'banci', 'securitate'];
+      const cats = [...new Map(st.map(s => [s.cat, s.catNume])).entries()].sort((a, b) => ORD.indexOf(a[0]) - ORD.indexOf(b[0]));
+      if (FILTRU !== 'toate' && FILTRU !== 'mare' && !cats.some(c => c[0] === FILTRU)) FILTRU = 'toate';
+      filtre = `<nav class="cipuri-bara" aria-label="Filtre">${[['toate', 'Toate'], ['mare', 'Impact mare'], ...cats].map(([k, t]) => `<button type="button" class="cip${FILTRU === k ? ' activ' : ''}" data-act="filtru" data-f="${esc(k)}" aria-pressed="${FILTRU === k}">${FILTRU === k ? ICON.bifa : ''}${esc(t)}</button>`).join('')}</nav>`;
+      const potr = s => FILTRU === 'toate' || (FILTRU === 'mare' ? s.impact === 'mare' : s.cat === FILTRU);
+      const noi = st.filter(s => s.in48 && potr(s)), vechi = st.filter(s => !s.in48 && potr(s));
+      const v = m.valori;
+      card9 = sectiune(`${antet('9', 'Știri importante', m)}
+<div class="rezumat"><span>Ultimele ${v.ore} h · ${v.relevante === 1 ? '1 știre relevantă' : `${v.relevante} știri relevante`}</span><span>${esc(m.detaliu)}</span></div>
+<ul class="stiri">${noi.map(stire).join('') || `<li class="nota">Nicio știre${FILTRU === 'toate' ? '' : ' pentru filtrul ales'} în ultimele ${v.ore} de ore.</li>`}</ul>
+${vechi.length ? `<h3 class="sub-titlu">Mai vechi · nu intră în scor</h3><ul class="stiri">${vechi.map(stire).join('')}</ul>` : ''}
+${regula(m)}`);
+    }
+    let card10;
+    if (!m10 || m10.stare === 'lipsa') card10 = `<section class="card card-gol"><div class="antet">${insigna('10')}<h2>Influențatori · din presă</h2></div><p class="nota">Indisponibil acum; vine din aceleași fluxuri ca știrile.</p></section>`;
+    else {
+      const ap = m10.valori.aparitii.map(a => `<li class="stire"><div class="infl"><span class="avatar">${esc(a.init)}</span><span class="pr-txt"><span class="pr-t">${esc(a.nume)} · ${esc(a.rol)}</span><span class="pr-s">${esc(a.sursa)} · ${esc(cand(a.t))}</span></span>${chip(SENS[a.tip][1], SENS[a.tip][0])}</div>
+${titluStire(a)}<p class="stire-concl">${esc(a.concluzie)}</p><p class="stire-regula">Regulă: ${esc(a.regula)}</p></li>`).join('');
+      card10 = sectiune(`${antet('10', 'Influențatori · din presă', m10)}
+<p class="nota">X costă bani pentru fiecare postare citită, așa că aici apar declarațiile lor preluate de site-urile de știri.</p>
+<ul class="stiri">${ap || '<li class="nota">Niciun nume urmărit în titlurile din ultimele 7 zile.</li>'}</ul>
+<p class="nota mic">Nume urmărite: ${m10.valori.urmariti.map(p => esc(p.scurt || p.nume)).join(' · ')}</p>
+${regula(m10)}`);
+    }
+    return `${bara('Știri')}${filtre}<main class="continut">${card9}${card10}</main>`;
   }
   function ecranCalendar() {
     const H = DATE.halving;
@@ -661,7 +738,7 @@ ${regula(m)}`);
     const ev = (DATE.calendar || []).map(e => {
       const imp = e.impact === 'mare' ? 'unfav' : e.impact === 'mediu' ? 'neu' : 'gri';
       return `<li class="ev"><div class="ev-cand"><span class="ev-zi">${esc(ziRelativa(e.t))}</span><span class="ev-ora num">${e.estimat ? '≈ ' : ''}${esc(oraRo(e.t))}</span></div>
-<div class="ev-corp"><div class="ev-titlu">${esc(e.titlu)}</div>${e.nota ? `<div class="ev-nota">${esc(e.nota)}</div>` : ''}${e.regula ? `<div class="ev-regula">Regulă: ${esc(e.regula)}</div>` : ''}<div>${chip(`impact ${e.impact}`, imp)}</div></div></li>`;
+<div class="ev-corp"><div class="ev-titlu">${esc(e.titlu)}</div>${e.nota ? `<div class="ev-nota">${esc(e.nota)}</div>` : ''}${e.regula ? `<div class="ev-regula">Regulă: ${esc(e.regula)}</div>` : ''}${e.pariuri ? `<a class="ev-pariuri" href="#grafice/7">${insigna('24', 'mica')}<span>Pariuri (Polymarket): ${esc(e.pariuri)}</span></a>` : ''}<div>${chip(`impact ${e.impact}`, imp)}</div></div></li>`;
     }).join('');
     return `${bara('Calendar')}<main class="continut">${hv}
 <section class="card"><div class="antet">${insigna('11')}<h2>Evenimente care mișcă prețul</h2></div><p class="nota mic">Ora României. Impactul vine dintr-o listă fixă: Fed, inflație și locuri de muncă = mare; expirarea trimestrială = mare, cea lunară = mediu; ajustarea dificultății = mic.</p>
@@ -685,14 +762,14 @@ ${regula(m)}`);
 <h3>Termen scurt</h3>
 <table class="tabel">${['6', '7', '8', '9', '19', '20', '28'].map(rand).join('')}</table>
 <p class="formula">media = ${semn(v.scurt.medie, 2)} → <strong>${esc(v.scurt.eticheta || '—')}</strong> (≤ −0,5 negativ, ≥ +0,5 pozitiv, altfel neutru)</p>
-<p class="nota mic">Modulele care vin în etapele 2 și 3 nu intră încă în medie.</p>`;
+<p class="nota mic">ETF, Macro și Derivatele agregate vin în etapa 3 și nu intră încă în medie.</p>`;
     deschideDialog(html);
   }
   function arataDespre() {
     const html = `<h2>Despre Tablou BTC</h2>
 <p>Aplicația adună date despre Bitcoin din surse gratuite și dă pentru fiecare modul o concluzie după reguli fixe, fără AI. Regula care a dat concluzia apare în fiecare card.</p>
 <p>Datele se actualizează automat la 30 de minute, pe GitHub. Prețul din antet vine direct de la Binance, la fiecare minut cât aplicația e deschisă.</p>
-<h3>Surse</h3><p class="nota">Coin Metrics Community · mempool.space · Deribit · DefiLlama · alternative.me · CoinPaprika · btcnodes.io · BNR (prin cursbnr.ro) · Coinbase · OKX · Binance</p>
+<h3>Surse</h3><p class="nota">Coin Metrics Community · mempool.space · Deribit · DefiLlama · alternative.me · CoinPaprika · btcnodes.io · BNR (prin cursbnr.ro) · Coinbase · OKX · Binance · Polymarket · CoinGecko · știri prin RSS: CoinDesk, Cointelegraph, The Block, Decrypt, Bitcoin Magazine, Bitcoin.com, Google News</p>
 <p class="nota mic">Ultima actualizare: ${esc(cand(Date.parse(DATE.generat)))}${DATE.erori?.length ? ` · ${DATE.erori.length} surse nu au răspuns` : ''}.</p>
 <p class="disclaimer">Informații, nu sfaturi financiare.</p>`;
     deschideDialog(html);
@@ -770,6 +847,7 @@ ${regula(m)}`);
     else if (a === 'calcul') arataCalcul();
     else if (a === 'despre') arataDespre();
     else if (a === 'inchide') $('#dialog').close();
+    else if (a === 'filtru') { FILTRU = b.dataset.f; deseneaza(true); }
   });
   $('#dialog').addEventListener('click', e => { if (e.target.id === 'dialog') e.target.close(); });
   window.addEventListener('hashchange', () => deseneaza(false));

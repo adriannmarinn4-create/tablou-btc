@@ -1,5 +1,5 @@
 // Tablou BTC — service worker: aplicația merge și fără internet, cu ultimele date salvate.
-const VERSIUNE = 'tablou-btc-v1';
+const VERSIUNE = 'tablou-btc-v2';
 const DATE = 'tablou-btc-date';
 const FONTURI = 'tablou-btc-fonturi';
 const SHELL = ['./', './index.html', './app.css', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];

@@ -14,6 +14,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FLUXURI, citesteRss, unifica, modulStiri, modulInfluentatori } from './stiri.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ARG = {};
@@ -288,14 +289,81 @@ async function sursaNoduri() {
   return d;
 }
 
+// știri: toate fluxurile RSS deodată; ajung două care răspund
+async function sursaStiri() {
+  const r = await Promise.allSettled(FLUXURI.map(([s, u]) => cere(u, { tip: 'text', incercari: 2, timeout: 20000 }).then(x => citesteRss(x, s))));
+  const bune = [], rele = [];
+  r.forEach((x, i) => (x.status === 'fulfilled' && x.value.length ? bune : rele).push(i));
+  if (rele.length) log(`știri: fără ${rele.map(i => `${FLUXURI[i][0]} (${r[i].reason?.message || 'flux gol'})`).join(', ')}`);
+  if (bune.length < 2) throw new Error('mai puțin de 2 fluxuri RSS au răspuns');
+  const toate = unifica(bune.map(i => r[i].value), T);
+  log(`știri: ${bune.length}/${FLUXURI.length} fluxuri, ${toate.length} titluri din ultimele 7 zile`);
+  return { toate, fluxuri: bune.map(i => FLUXURI[i][0]) };
+}
+
+// Polymarket (Gamma API, fără cheie): decizia Fed următoare și pariurile pe prețul BTC până la sfârșitul anului
+const GAMMA = 'https://gamma-api.polymarket.com';
+const cotaDa = m => { try { return +JSON.parse(m.outcomePrices)[0] * 100; } catch { return NaN; } };
+const LUNI_EN = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const dataEn = s => { // „by December 31, 2026” → ziua în UTC
+  const m = /by ([A-Za-z]+) (\d{1,2}), (\d{4})/.exec(s || '');
+  const l = m ? LUNI_EN.indexOf(m[1].toLowerCase()) : -1;
+  return l < 0 ? NaN : Date.UTC(+m[3], l, +m[2]);
+};
+function rezultatFed(s) {
+  if (/no change/i.test(s)) return { eticheta: 'fără schimbare', scurt: 'pauză', dir: 0 };
+  const m = /(\d+)\s*(\+)?\s*bps?\s*(increase|hike|decrease|cut)/i.exec(s);
+  if (!m) return { eticheta: s, scurt: s, dir: null };
+  const sus = /increase|hike/i.test(m[3]);
+  return { eticheta: `${sus ? 'crește' : 'scade'} ${m[2] ? '≥ ' : ''}${nf(+m[1] / 100, 2)} pp`, scurt: sus ? 'creștere' : 'scădere', dir: sus ? 1 : -1 };
+}
+async function sursaPolymarket() {
+  const caut = q => cere(`${GAMMA}/public-search?q=${encodeURIComponent(q)}&limit_per_type=10&events_status=active`).then(j => (j.events || []).filter(e => !e.closed && Array.isArray(e.markets)));
+  const [rf, rb] = await Promise.allSettled([caut('fed decision'), caut('what price will bitcoin hit')]);
+  let fed = null, btc = null;
+  const ev = (rf.status === 'fulfilled' ? rf.value : []).filter(e => /^Fed Decision in /i.test(e.title) && Date.parse(e.endDate) > T).sort((a, b) => Date.parse(a.endDate) - Date.parse(b.endDate))[0];
+  if (ev) {
+    const piete = ev.markets.filter(m => !m.closed);
+    const rezultate = piete.map(m => ({ ...rezultatFed(m.groupItemTitle || m.question || ''), p: rot(cotaDa(m), 1) })).filter(x => fin(x.p)).sort((a, b) => b.p - a.p);
+    // ziua deciziei: data pieței (înainte de prânz UTC înseamnă ziua de dinainte); anunțul Fed e la ~19:00 UTC
+    const sf = Math.min(...piete.map(m => Date.parse(m.endDate)).filter(Number.isFinite));
+    const d = new Date(Number.isFinite(sf) ? sf : Date.parse(ev.endDate));
+    if (d.getUTCHours() < 12) d.setUTCDate(d.getUTCDate() - 1);
+    const decizie = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 19);
+    if (rezultate.length) fed = { titlu: ev.title, decizie, rezultate, volum: Math.round(ev.volume || 0) };
+  }
+  const an = ACUM.getUTCFullYear();
+  const evs = (rb.status === 'fulfilled' ? rb.value : []).filter(e => /^What price will Bitcoin hit in \d{4}\?$/i.test(e.title));
+  const eb = evs.find(e => e.title.includes(String(an))) || evs.find(e => e.title.includes(String(an + 1)));
+  if (eb) {
+    const piete = eb.markets.filter(m => !m.closed).map(m => {
+      const txt = `${m.groupItemTitle || ''} ${m.question || ''}`;
+      const prag = +(String(m.groupItemTitle || '').replace(/[^\d]/g, '') || (/\$([\d,]+)/.exec(m.question || '')?.[1] || '').replace(/,/g, ''));
+      return { prag, sus: /↑|reach|above/i.test(txt), p: rot(cotaDa(m), 1), pana: dataEn(m.question) };
+    }).filter(x => x.prag > 0 && fin(x.p));
+    if (piete.length) btc = { titlu: eb.title, pana: piete.find(x => Number.isFinite(x.pana))?.pana ?? Date.parse(eb.endDate), piete };
+  }
+  if (!fed && !btc) throw new Error(rf.status === 'rejected' ? rf.reason.message : 'nu am găsit piețele');
+  return { fed, btc };
+}
+
+// companiile-trezorerie (CoinGecko, fără cheie)
+async function sursaTrezorerii() {
+  const j = await cere('https://api.coingecko.com/api/v3/companies/public_treasury/bitcoin');
+  const companii = (j.companies || []).filter(c => c.total_holdings > 0).sort((a, b) => b.total_holdings - a.total_holdings);
+  if (!companii.length) throw new Error('listă goală');
+  return { total: j.total_holdings || companii.reduce((a, c) => a + c.total_holdings, 0), valoare: j.total_value_usd, companii };
+}
+
 // ---------------------------------------------------------------- reguli comune
 const NUME = {
   2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu',
   18: 'Randamente', 19: 'Volatilitate', 25: 'Rețea', 27: 'Lei și euro', 28: 'Stablecoins', 8: 'Sentiment',
+  6: 'ETF și companii', 9: 'Știri', 10: 'Influențatori', 24: 'Pariuri',
 };
 const TERMEN_LUNG = ['2', '3', '4', '15', '16', '17'];
 const TERMEN_SCURT = ['6', '7', '8', '9', '19', '20', '28'];
-const IN_CURAND = { 6: 'ETF (etapa 2)', 7: 'Macro (etapa 3)', 9: 'Știri (etapa 2)', 20: 'Derivate (etapa 3)' };
+const IN_CURAND = { 6: 'ETF (etapa 3)', 7: 'Macro (etapa 3)', 20: 'Derivate (etapa 3)' };
 const medieScoruri = semnale => { const s = semnale.filter(fin); return s.length ? rot(medie(s), 2) : null; };
 
 // ---------------------------------------------------------------- module
@@ -765,6 +833,68 @@ function modulSentiment(D) {
   };
 }
 
+// 24 · Pariuri (Polymarket) — informativ; rezultatul Fed va intra în modulul 7 (etapa 3)
+const cota = p => (p < 1 ? 'sub 1%' : `${nf(p)}%`);
+const ziLuna = t => { const d = new Date(t); return `${d.getUTCDate()} ${LS[d.getUTCMonth()]}`; };
+function modulPariuri(D) {
+  const P = D.poly;
+  if (!P) throw new Error('Polymarket nu a răspuns');
+  const f = P.fed, p = D.pret.usd;
+  let btc = null;
+  if (P.btc) {
+    const sus = P.btc.piete.filter(x => x.sus && x.prag > p).sort((a, b) => a.prag - b.prag).slice(0, 3);
+    const jos = P.btc.piete.filter(x => !x.sus && x.prag < p).sort((a, b) => b.prag - a.prag).slice(0, 3);
+    btc = { titlu: P.btc.titlu, pana: P.btc.pana, sus: sus.map(({ prag, p }) => ({ prag, p })), jos: jos.map(({ prag, p }) => ({ prag, p })) };
+  }
+  const top = f?.rezultate[0], al2 = f?.rezultate[1];
+  const parti = [];
+  if (top) parti.push(`Pariurile dau ${cota(top.p)} pentru „${top.eticheta}” la decizia Fed din ${ziLuna(f.decizie)}${al2 ? `; urmează „${al2.eticheta}”, cu ${cota(al2.p)}` : ''}`);
+  if (btc && (btc.jos[0] || btc.sus[0])) {
+    const b = [btc.jos[0] && `${cota(btc.jos[0].p)} să coboare la ${usd(btc.jos[0].prag)}`, btc.sus[0] && `${cota(btc.sus[0].p)} să urce la ${usd(btc.sus[0].prag)}`].filter(Boolean);
+    parti.push(`Pentru BTC, până pe ${dataRo(btc.pana)}: ${b.join(' și ')}`);
+  }
+  return {
+    informativ: true, scor: null,
+    eticheta: top ? `${top.scurt} ${cota(top.p)}` : 'BTC',
+    detaliu: top ? `Fed, ${ziLuna(f.decizie)}: ${top.scurt} ${cota(top.p)}` : `BTC până pe ${dataRo(btc.pana)}`,
+    valori: { fed: f ? { ...f, directie: top.p > 50 ? top.dir : null } : null, btc },
+    regula: 'cota unui rezultat = prețul pariului „Da” (0–100%), adică probabilitatea pe care o dau parierii · doar informativ · rezultatul Fed cu peste 50% va intra în modulul Macro (etapa 3): creștere −1, scădere +1, pauză 0',
+    concluzie: `${parti.join('. ')}.`,
+    surse: 'Polymarket (Gamma API, fără cheie)',
+  };
+}
+
+// 6 · ETF și companii-trezorerie — în etapa 2 doar companiile (informativ); fluxurile ETF vin în etapa 3
+function modulEtf(D, prev) {
+  const Z = D.trezorerii;
+  if (!Z) throw new Error('CoinGecko nu a răspuns');
+  const azi = new Date(T).toISOString().slice(0, 10);
+  const str = Z.companii.find(c => /^MSTR\b/i.test(c.symbol || '') || /\bStrategy\b/.test(c.name || ''));
+  const istoric = (prev?.module?.['6']?.valori?.companii?.istoric || []).filter(x => x[0] !== azi);
+  istoric.push([azi, Math.round(Z.total), str ? Math.round(str.total_holdings) : null]);
+  const ist = istoric.slice(-400);
+  const laZile = n => { const d = new Date(T - n * ZI).toISOString().slice(0, 10); return [...ist].reverse().find(x => x[0] <= d) ?? null; };
+  const x7 = laZile(7), x30 = laZile(30);
+  const sply = D.cm?.SplyCur?.v?.at(-1);
+  const procent = sply ? (Z.total / sply) * 100 : null;
+  const cost = c => (c.total_entry_value_usd > 0 ? Math.round(c.total_entry_value_usd / c.total_holdings) : null);
+  const top = Z.companii.slice(0, 8).map(c => ({ nume: c.name, simbol: String(c.symbol || '').replace(/\.[A-Z]+$/, ''), tara: c.country || null, btc: Math.round(c.total_holdings), cost: cost(c) }));
+  const strategy = str ? { btc: Math.round(str.total_holdings), cost: cost(str), fataCost: cost(str) ? rot((D.pret.usd / cost(str) - 1) * 100, 1) : null, ch7: x7?.[2] != null ? Math.round(str.total_holdings - x7[2]) : null, ch30: x30?.[2] != null ? Math.round(str.total_holdings - x30[2]) : null } : null;
+  const ch30 = x30 ? Math.round(Z.total - x30[1]) : null, ch7 = x7 ? Math.round(Z.total - x7[1]) : null;
+  let concluzie = `Companiile listate la bursă țin ${nf(Z.total)} BTC${procent ? ` (${nf(procent, 1)}% din toți bitcoinii)` : ''}`;
+  if (ch30 != null) concluzie += `, ${ch30 >= 0 ? '+' : MINUS}${nf(Math.abs(ch30))} BTC în 30 de zile`;
+  else if (ch7 != null) concluzie += `, ${ch7 >= 0 ? '+' : MINUS}${nf(Math.abs(ch7))} BTC în 7 zile`;
+  if (strategy) concluzie += `. Strategy are ${nf(strategy.btc)} BTC${strategy.cost ? `, cumpărați în medie la ${usd(strategy.cost)}; prețul e ${strategy.fataCost < 0 ? `cu ${nf(-strategy.fataCost)}% sub` : `cu ${nf(strategy.fataCost)}% peste`} costul ei` : ''}`;
+  concluzie += '. Fluxurile ETF, care dau scorul, vin în etapa 3.';
+  return {
+    scor: null, partial: true,
+    eticheta: `${nf(Z.total / 1e6, 2)} mil. BTC la companii`, detaliu: 'fluxurile ETF: etapa 3',
+    valori: { etf: null, companii: { total: Math.round(Z.total), valoare: sig(Z.valoare ?? Z.total * D.pret.usd), procent: rot(procent, 2), ch7, ch30, deLa: ist[0][0], top, strategy, istoric: ist } },
+    regula: 'ETF (din etapa 3): suma fluxurilor nete pe ultimele 10 sesiuni — ieșiri peste 1 mld $ → −2, ieșiri între 0,5 și 1 mld $ → −1, intrări între 0,5 și 1 mld $ → +1, intrări peste 1 mld $ → +2, altfel 0 · companiile-trezorerie sunt doar informative',
+    concluzie, surse: 'CoinGecko (companii-trezorerie, fără cheie) · fluxurile ETF: SoSoValue, din etapa 3 (Farside blochează serverele GitHub)',
+  };
+}
+
 // ---------------------------------------------------------------- calendar
 function ultimaVineri(an, luna) { // luna 0..11, ora 08:00 UTC (expirarea Deribit)
   const d = new Date(Date.UTC(an, luna + 1, 0, 8));
@@ -791,9 +921,13 @@ async function calendar(D) {
   }
   const dif = D.mempool?.dif;
   if (dif?.estimatedRetargetDate) ev.push({ t: +dif.estimatedRetargetDate, titlu: 'Ajustarea dificultății', tip: 'dificultate', nota: `estimare ${pct(+dif.difficultyChange, 1)}`, estimat: true });
+  const fed = D.pariuriFed; // cotele Polymarket apar la FOMC-ul de care țin
   return ev
     .filter(e => Number.isFinite(e.t) && e.t >= T - 12 * 3600000 && e.t <= T + 75 * ZI)
-    .map(e => ({ ...e, impact: IMPACT[e.tip] || 'mediu', regula: REGULI[e.tip] || null }))
+    .map(e => ({
+      ...e, impact: IMPACT[e.tip] || 'mediu', regula: REGULI[e.tip] || null,
+      pariuri: e.tip === 'FOMC' && fed && Math.abs(e.t - fed.decizie) < 2 * ZI ? fed.rezultate.slice(0, 2).map(r => `${r.eticheta} — ${cota(r.p)}`).join(' · ') : undefined,
+    }))
     .sort((a, b) => a.t - b.t);
 }
 function halving(D) {
@@ -830,17 +964,19 @@ async function principal() {
   let prev = null;
   if (ARG.prev) { try { prev = JSON.parse(await readFile(ARG.prev, 'utf8')); } catch { log('fără date anterioare'); } }
 
-  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod] = await Promise.allSettled([
+  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod, rStiri, rPoly, rTrez] = await Promise.allSettled([
     sursaPret(),
     coinMetricsSigur(['PriceUSD', 'CapMrktCurUSD', 'SplyCur']),
     coinMetricsSigur(['CapMVRVCur', 'IssTotUSD'], '2012-01-01'),
     sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
+    sursaStiri(), sursaPolymarket(), sursaTrezorerii(),
   ]);
   const ok = (r, nume) => { if (r.status === 'fulfilled') { log(`✓ ${nume}`); return r.value; } log(`✗ ${nume}: ${r.reason?.message}`); return null; };
   const D = {
     pret: ok(rPret, 'preț'), cm: { ...(ok(rCm, 'Coin Metrics (preț, capitalizare)') || {}), ...(ok(rCm2, 'Coin Metrics (MVRV, emisie)') || {}) },
     curs: null, mempool: ok(rMp, 'mempool.space') || {}, dvol: ok(rDvol, 'Deribit DVOL'), fng: ok(rFng, 'Fear & Greed'),
     funding: ok(rFund, 'funding'), stable: ok(rStable, 'DefiLlama'), dominanta: ok(rPap, 'CoinPaprika')?.dominanta ?? null, noduri: ok(rNod, 'btcnodes.io'),
+    stiri: ok(rStiri, 'știri RSS'), poly: ok(rPoly, 'Polymarket'), trezorerii: ok(rTrez, 'CoinGecko (companii)'),
   };
   const P = D.cm.PriceUSD;
   if (!D.pret && P?.v?.length) D.pret = { usd: P.v.at(-1), schimbare24h: (P.v.at(-1) / P.v.at(-2) - 1) * 100, sursa: 'Coin Metrics (ieri)' };
@@ -897,7 +1033,12 @@ async function principal() {
   ruleaza('25', modulRetea);
   ruleaza('28', modulStablecoins);
   ruleaza('8', modulSentiment);
+  ruleaza('9', D => { if (!D.stiri) throw new Error('fluxurile RSS nu au răspuns'); return modulStiri(D.stiri.toate, T, { scorTxt }); });
+  ruleaza('10', D => { if (!D.stiri) throw new Error('fluxurile RSS nu au răspuns'); return modulInfluentatori(D.stiri.toate); });
+  ruleaza('24', modulPariuri);
+  ruleaza('6', D => modulEtf(D, prev));
   out.verdict = verdict(out.module);
+  D.pariuriFed = out.module['24']?.valori?.fed ?? null;
   out.calendar = await calendar(D);
   out.halving = halving(D);
   for (const [nr, m] of Object.entries(out.module)) log(`  ${nr.padStart(2)} ${String(m.nume).padEnd(13)} ${m.stare.padEnd(5)} scor ${m.scor ?? '—'}  ${m.eticheta ?? m.motiv ?? ''}`);

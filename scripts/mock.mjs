@@ -187,5 +187,71 @@ export function raspuns(url, tip, T) {
     const r = rng(3);
     return { count: 200, results: Array.from({ length: 200 }, (_, i) => ({ url: '', timestamp: Math.floor((T - i * 600000) / 1000), total_nodes: Math.round(23800 + (r() - 0.5) * 300), latest_height: 977712 })) };
   }
+  if (FLUX[u.host]) return rss(FLUX[u.host], u.host === 'news.google.com', T);
+  if (u.host === 'gamma-api.polymarket.com') return polymarket(u.searchParams.get('q') || '');
+  if (u.host === 'api.coingecko.com') return trezorerii();
   throw new Error(`mock: fără răspuns pentru ${url}`);
+}
+
+// ---------------------------------------------------------------- etapa 2: știri, Polymarket, companii
+// [ore în urmă, titlu, editor (doar la Google News)]
+const FLUX = {
+  'www.coindesk.com': [
+    [3, 'Binance says customer withdrawals are fully restored, four weeks after the $6.3 billion hack'],
+    [9, "Fed's Warsh signals another rate hike is on the table for December"],
+    [40, 'Strategy sold another $105 million of bitcoin last week, repurchased $81.2 million of STRC'],
+    [52, "Ripple's lending plan moves closer to tapping XRP Ledger's $800 million in stablecoins"],
+  ],
+  'cointelegraph.com': [
+    [2, "Here's what happened in crypto today"],
+    [12, 'Bitcoin ETFs draw $238 million in fresh inflows as BlackRock adds'],
+    [30, 'Trump says the US will keep buying bitcoin for its strategic reserve'],
+  ],
+  'www.theblock.co': [
+    [5, "JPMorgan flags bitcoin 'capitulation,' Democrats push back on SEC's crypto plans, and more"],
+    [70, 'Bitcoin miners sell 5,000 BTC as hashprice sinks to a record low'],
+  ],
+  'decrypt.co': [
+    [8, 'What Is Self-Custody? How to Hold Your Own Crypto Keys'],
+    [26, "Larry Fink: tokenization is the next generation for markets"],
+  ],
+  'bitcoinmagazine.com': [
+    [14, 'Bitcoin Has Become Boring, Finally'],
+    [33, "Cathie Wood's ARK buys $40 million of Coinbase shares on the dip"],
+  ],
+  'news.bitcoin.com': [
+    [6, 'Bitcoin ETFs Lose $2.58B in November With Blackrock Driving the Exit'],
+    [20, 'US Wins Forfeiture of $674K in Crypto Tied to an Investment Scam'],
+  ],
+  'news.google.com': [
+    [4, 'Bitcoin Tops $60,000 as Risk Assets Rise in Holiday Trading', 'Bloomberg.com'],
+    [6, 'Bitcoin ETFs Lose $2.58B in November With Blackrock Driving the Exit', 'Bitcoin.com News'],
+    [20, 'Bitcoin outlook: sixth weekly decline and a December Fed hike', 'The Motley Fool'],
+    [30, 'Why Citigroup Just Cut Its Bitcoin and Ethereum Price Forecasts', 'Coinpedia'],
+    [44, 'Why Is Bitcoin Dropping So Much? 5 Reasons Behind Its Worst Month Since 2022', 'Yahoo Finance'],
+  ],
+};
+function rss(items, google, T) {
+  const x = items.map(([h, titlu, ed]) => `<item><title><![CDATA[${titlu}${google ? ` - ${ed}` : ''}]]></title><link>https://exemplu.test/${encodeURIComponent(titlu.slice(0, 30))}</link><pubDate>${new Date(T - h * 3600000).toUTCString()}</pubDate><description>&lt;p&gt;rezumat&lt;/p&gt;</description>${google ? `<source url="https://exemplu.test">${ed}</source>` : ''}</item>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>test</title>${x}</channel></rss>`;
+}
+function polymarket(q) {
+  const pr = (p) => JSON.stringify([String(p), String(1 - p)]);
+  if (/fed/i.test(q)) {
+    const m = [['50+ bps decrease', 0.0015], ['25 bps decrease', 0.0025], ['No change', 0.0365], ['25 bps increase', 0.935], ['50+ bps increase', 0.0215]];
+    return { events: [
+      { slug: 'fed-decision-in-december-2026', title: 'Fed Decision in December?', endDate: '2026-12-10T04:59:00Z', closed: false, volume: 63500000, markets: m.map(([g, p]) => ({ groupItemTitle: g, question: `Will the Fed ... after the December 2026 meeting?`, outcomePrices: pr(p), closed: false, endDate: '2026-12-09T23:59:00Z' })) },
+      { slug: 'fed-decision-in-december', title: 'Fed decision in December?', endDate: '2025-12-10T00:00:00Z', closed: true, markets: [] },
+    ] };
+  }
+  const m = [['↓ 55,000', 'dip to', 0.455], ['↓ 50,000', 'dip to', 0.277], ['↓ 45,000', 'dip to', 0.1125], ['↓ 60,000', 'dip to', 1, true], ['↑ 90,000', 'reach', 0.0315], ['↑ 95,000', 'reach', 0.0215], ['↑ 100,000', 'reach', 0.0115], ['↑ 70,000', 'reach', 1, true]];
+  return { events: [
+    { slug: 'what-price-will-bitcoin-hit-before-2027', title: 'What price will Bitcoin hit in 2026?', endDate: '2027-01-01T05:00:00Z', closed: false, markets: m.map(([g, v, p, inchis]) => ({ groupItemTitle: g, question: `Will Bitcoin ${v} $${g.slice(2)} by December 31, 2026?`, outcomePrices: pr(p), closed: Boolean(inchis) })) },
+    { slug: 'what-price-will-bitcoin-hit-in-november-2026', title: 'What price will Bitcoin hit in November?', endDate: '2026-12-01T05:00:00Z', closed: false, markets: [] },
+  ] };
+}
+function trezorerii() {
+  const c = [['Strategy', 'MSTR.US', 'US', 640250, 47.4e9], ['MARA Holdings', 'MARA.US', 'US', 53250, 3.4e9], ['Twenty One Capital', 'XXI.US', 'US', 43514, 0], ['Metaplanet', '3350.T', 'JP', 30823, 3.3e9], ['Bitcoin Standard Treasury', 'CEPO.US', 'US', 30021, 0], ['Bullish', 'BLSH.US', 'US', 24300, 0], ['Riot Platforms', 'RIOT.US', 'US', 19368, 0], ['Trump Media & Technology Group', 'DJT.US', 'US', 15000, 1.6e9], ['Coinbase Global', 'COIN.US', 'US', 14548, 0], ['Semler Scientific (acquired by Strive)', 'SMLR.US', 'US', 0, 0]];
+  const companies = c.map(([name, symbol, country, h, e]) => ({ name, symbol, country, total_holdings: h, total_entry_value_usd: e, total_current_value_usd: h * 61500, percentage_of_total_supply: h / 2.1e5 }));
+  return { total_holdings: 1084500, total_value_usd: 66.7e9, market_cap_dominance: 5.16, companies };
 }
