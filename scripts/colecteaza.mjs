@@ -1160,9 +1160,10 @@ async function calendar(D) {
     const fix = JSON.parse(await readFile(join(DIR, 'evenimente.json'), 'utf8'));
     for (const e of fix.evenimente) ev.push({ t: Date.parse(e.utc), titlu: e.titlu, tip: e.tip, nota: e.nota ?? null });
   } catch (e) { log(`calendar: ${e.message}`); }
-  const IMPACT = { FOMC: 'mare', CPI: 'mare', NFP: 'mare', 'expirare-trimestriala': 'mare', 'expirare-lunara': 'mediu', dificultate: 'mic' };
+  const IMPACT = { FOMC: 'mare', 'FOMC-strategie': 'mic', CPI: 'mare', NFP: 'mare', 'expirare-trimestriala': 'mare', 'expirare-lunara': 'mediu', dificultate: 'mic' };
   const REGULI = {
     FOMC: 'FOMC → impact mare. Dobândă majorată = negativ pentru BTC, redusă = pozitiv.',
+    'FOMC-strategie': 'Ședință fără decizie de dobândă → impact mic.',
     CPI: 'CPI → impact mare. Inflație peste așteptări = negativ pentru BTC.',
     NFP: 'NFP → impact mare. Piață a muncii foarte puternică = dobânzi mai mari mai mult timp.',
   };
