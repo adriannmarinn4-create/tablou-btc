@@ -1,0 +1,52 @@
+name: Actualizare date
+
+# La fiecare 30 de minute (minutele 7 și 37, ca să evite aglomerația de la fix),
+# la fiecare modificare pe main și la cerere, din fila Actions.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizare
+  cancel-in-progress: false
+
+jobs:
+  actualizare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Datele de la rularea trecută
+        run: |
+          git fetch --depth=1 origin site || true
+          git show FETCH_HEAD:tablou.json > /tmp/vechi.json 2>/dev/null || echo '{}' > /tmp/vechi.json
+
+      - name: Colectează datele
+        run: |
+          mkdir -p site
+          cp -r app/. site/
+          touch site/.nojekyll
+          node scripts/colecteaza.mjs --out=site/tablou.json --prev=/tmp/vechi.json
+
+      - name: Publică pe ramura site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd site
+          git init -q -b site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Date $(date -u +'%Y-%m-%d %H:%M') UTC"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" site

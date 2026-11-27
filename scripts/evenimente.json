@@ -1,0 +1,8 @@
+{
+  "nota": "Evenimente macro cu dată fixă, în ora UTC. Expirările de opțiuni, ajustarea dificultății și halvingul se calculează singure. Adaugă aici datele noi (Fed, BLS) când apar calendarele pe 2027.",
+  "evenimente": [
+    { "utc": "2026-12-04T13:30:00Z", "titlu": "Locurile de muncă din SUA (NFP)", "tip": "NFP" },
+    { "utc": "2026-12-09T19:00:00Z", "titlu": "Decizia Fed (FOMC)", "tip": "FOMC", "nota": "conferința de presă la 21:30, ora României" },
+    { "utc": "2026-12-10T13:30:00Z", "titlu": "Inflația din SUA (CPI)", "tip": "CPI" }
+  ]
+}
