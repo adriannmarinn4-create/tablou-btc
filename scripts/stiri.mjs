@@ -98,9 +98,9 @@ const CUVINTE = [
   [-1, /\bhikes?\b|\bhiked\b|\bhawkish\b|\btighten(?:s|ing)?\b|\bhot(?:ter)?\b/gi],
   [-1, /\bdowngrade[sd]?\b|\bbearish\b|\bwarn(?:s|ed|ing|ings)?\b|\bcuts?\b|\bslash(?:es|ed)?\b/gi],
   [-1, /\bban(?:s|ned)?\b|\bcrackdown\b|\blawsuits?\b|\bsue[sd]?\b|\bcharged\b|\bprobe\b|\binvestigat(?:e|es|ed|ion)\b|\breject(?:s|ed|ion)?\b|\bdelay(?:s|ed)?\b|\bfined\b|\bpenalt(?:y|ies)\b/gi],
-  [-1, /\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\bsteal(?:s|ing)?\b|\btheft\b|\bdrain(?:s|ed)?\b|\bbreach(?:es|ed)?\b|\bscams?\b|\battack(?:s|ed|ers?)?\b/gi],
+  [-1, /\bhack(?:s|ed|ers?)?\b|\bexploit(?:s|ed)?\b|\bstolen\b|\bsteal(?:s|ing)?\b|\btheft\b|\bthie(?:f|ves)\b|\bdrain(?:s|ed)?\b|\bbreach(?:es|ed)?\b|\bscams?\b|\battack(?:s|ed|ers?)?\b|\bfreez(?:e|es|ing)\b|\bfrozen\b|\bmeltdown\b/gi],
   [-1, /\bplung(?:e|es|ed|ing)\b|\bcrash(?:es|ed)?\b|\btumbl(?:e|es|ed)\b|\bslump(?:s|ed)?\b|\bslid(?:e|es)?\b|\bsinks?\b|\bsank\b|\bdrops?\b|\bdropped\b|\bfall(?:s|ing)?\b|\bfell\b|\bdeclin(?:e|es|ed|ing)\b|\bfears?\b|\bcollaps(?:e|es|ed)\b|\bbankrupt(?:cy)?\b|\binsolven(?:t|cy)\b|\bworst\b|\bstress\b|\bweak(?:ens?|er|ness)?\b/gi],
-  [+1, /\binflows?\b|\badd(?:s|ed)?\b|\battract(?:s|ed)?\b/gi],
+  [+1, /\binflows?\b|\badd(?:s|ed|ing)?\b(?=(?:\s+\S+){0,3}?\s+(?:bitcoin|BTC)\b)|\battract(?:s|ed)?\b|\badvanc(?:e|es|ed)\b/gi],
   [+1, /\bbuy(?:s|ing|ers)?\b|\bbought\b|\bpurchas(?:e|es|ed)\b|\bacquir(?:e|es|ed)\b|\baccumulat(?:e|es|ed|ing|ion)\b|\bscoop(?:s|ed)?\b/gi],
   [+1, /\bdovish\b|\beas(?:e|es|ing)\b|\bcool(?:s|ing|er|ed)?\b/gi],
   [+1, /\bupgrade[sd]?\b|\bbullish\b|\boverweight\b/gi],
@@ -138,15 +138,23 @@ const CONCLUZII = {
 const concluzieStire = (cat, x) => (x.s ? CONCLUZII[cat.id][x.s] : x.tip === 'mixtă' ? 'Semne amestecate în titlu; nu mută scorul.' : 'Titlul nu are un sens clar; nu mută scorul.');
 
 const cheie = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 70);
+// rezumatele zilnice („…, and more”, „Here's what happened…”) amestecă mai multe subiecte: le sar
+const RUNDA = /(?:,| and) more\.?$|^here'?s what happened|^the daily\b|^morning minute|^week in review|^this week in\b|^daily recap/i;
+const STOP = new Set(['bitcoin', 'bitcoins', 'crypto', 'cryptocurrency', 'says', 'said', 'with', 'from', 'that', 'this', 'after', 'over', 'into', 'than', 'will', 'just', 'more', 'about', 'what', 'their', 'have', 'been', 'amid', 'could', 'would', 'your', 'here', 'there', 'they', 'were', 'when', 'which', 'while', 'report', 'news']);
+const cuvinte = t => new Set(t.toLowerCase().replace(/['’]s\b/g, '').split(/[^a-z0-9$]+/)
+  .filter(w => w.length >= 4 && !STOP.has(w)).map(w => (w.length > 4 && w.endsWith('s') ? w.slice(0, -1) : w)));
+// aceeași poveste: cel puțin 3 cuvinte comune și cel puțin jumătate din titlul mai scurt, la mai puțin de 3 zile distanță
+const aceeasi = (a, b) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n >= 3 && n / Math.min(a.size, b.size) >= 0.5; };
 export function unifica(liste, T) { // fără dubluri, doar ultimele 7 zile, cele mai noi primele
-  const vazut = new Set(), out = [];
+  const out = [];
   for (const it of liste.flat().sort((a, b) => b.t - a.t)) {
-    const k = cheie(it.titlu);
-    if (vazut.has(k) || it.t < T - ZILE_AFISATE * ZI || it.t > T + 3600000) continue;
-    vazut.add(k);
-    out.push(it);
+    if (it.t < T - ZILE_AFISATE * ZI || it.t > T + 3600000 || RUNDA.test(it.titlu)) continue;
+    const k = cheie(it.titlu), w = cuvinte(it.titlu);
+    const d = out.find(o => o.k === k || (Math.abs(o.t - it.t) < 3 * ZI && aceeasi(o.w, w)));
+    if (d) { if (d.sursa !== it.sursa && !d.alte.includes(it.sursa)) d.alte.push(it.sursa); continue; }
+    out.push({ ...it, k, w, alte: [] });
   }
-  return out;
+  return out.map(({ k, w, ...x }) => x);
 }
 
 // ---------------------------------------------------------------- 9 · Știri
@@ -159,7 +167,7 @@ export function modulStiri(toate, T, { semn, scorTxt }) {
     if (!relevanta(it.titlu, cat)) continue;
     const x = sens(it.titlu);
     stiri.push({
-      t: it.t, sursa: it.sursa, titlu: it.titlu, link: it.link, cat: cat.id, catNume: cat.nume, impact: cat.impact,
+      t: it.t, sursa: it.sursa, alte: (it.alte || []).slice(0, 4), titlu: it.titlu, link: it.link, cat: cat.id, catNume: cat.nume, impact: cat.impact,
       s: x.s, tip: x.tip, concluzie: concluzieStire(cat, x), regula: regulaSens(cat.nume, x), in48: it.t >= T - ORE_SCOR * 3600000,
     });
   }
@@ -171,7 +179,7 @@ export function modulStiri(toate, T, { semn, scorTxt }) {
   const M = G ? r.reduce((a, s) => a + greutate(s) * s.s, 0) / G : 0;
   const putine = r.length < 3;
   const scor = putine ? 0 : Math.max(-2, Math.min(2, Math.round(2 * M * 10) / 10));
-  const eticheta = putine ? 'Puține știri' : M <= -0.25 ? 'Mai mult negative' : M >= 0.25 ? 'Mai mult pozitive' : 'Echilibrate';
+  const eticheta = putine ? 'Puține știri' : scor <= -0.5 ? 'Mai mult negative' : scor >= 0.5 ? 'Mai mult pozitive' : 'Echilibrate';
   const parti = [neg && plural(neg, 'negativă', 'negative'), mix && plural(mix, 'mixtă', 'mixte'), poz && plural(poz, 'pozitivă', 'pozitive'), neu && plural(neu, 'neutră', 'neutre')].filter(Boolean);
   const peCat = tip => {
     const c = {};
@@ -184,13 +192,13 @@ export function modulStiri(toate, T, { semn, scorTxt }) {
     concluzie = `În ultimele 48 de ore: ${plural(r.length, 'știre relevantă', 'știri relevante')}, ${parti.join(', ')}`;
     if (neg) concluzie += `; negativele sunt despre ${peCat('negativ')}`;
     if (poz) concluzie += `; pozitivele despre ${peCat('pozitiv')}`;
-    concluzie += putine ? '. Prea puține știri pentru un semnal (0).' : `. Tonul e ${M <= -0.25 ? 'negativ' : M >= 0.25 ? 'pozitiv' : 'echilibrat'} (${scorTxt(scor)}).`;
+    concluzie += putine ? '. Prea puține știri pentru un semnal (0).' : `. Tonul e ${scor <= -0.5 ? 'negativ' : scor >= 0.5 ? 'pozitiv' : 'echilibrat'} (${scorTxt(scor)}).`;
   }
   const afisate = [...r, ...stiri.filter(s => !s.in48).slice(0, 12)].slice(0, 45);
   return {
     scor, eticheta, detaliu: parti.join(' · ') || 'nicio știre relevantă',
     valori: { ore: ORE_SCOR, relevante: r.length, negative: neg, pozitive: poz, mixte: mix, neutre: neu, medie: Math.round(M * 100) / 100, stiri: afisate },
-    regula: 'categoria din cuvinte-cheie în titlu (ETF, Fed și reglementare = impact mare; companii, mineri, bănci și securitate = impact mediu) · sensul din liste fixe de cuvinte (outflows, sell, hike, hack… = negativ; inflows, buy, rate cut, approve… = pozitiv; ambele = mixtă) · scorul = 2 × media pe 48 de ore, impactul mare contează dublu · sub 3 știri → 0',
+    regula: 'aceeași poveste de la mai multe site-uri contează o dată · categoria din cuvinte-cheie în titlu (ETF, Fed și reglementare = impact mare; companii, mineri, bănci și securitate = impact mediu) · sensul din liste fixe de cuvinte (outflows, sell, hike, hack… = negativ; inflows, buy, rate cut, approve… = pozitiv; ambele = mixtă) · scorul = 2 × media pe 48 de ore, impactul mare contează dublu · sub 3 știri → 0',
     concluzie, surse: `RSS gratuite: ${FLUXURI.map(f => f[0]).join(', ')} (titlurile rămân în engleză)`,
   };
 }
@@ -212,11 +220,13 @@ export const PERSOANE = [
   { id: 'cz', scurt: 'CZ', nume: 'Changpeng Zhao', rol: 'fondatorul Binance', init: 'CZ', cuv: 'CZ', re: [/\bCZ\b|Changpeng Zhao/],
     c: { '-1': 'Știrile despre CZ mișcă mai mult sentimentul decât prețul.', 1: 'Știrile despre CZ mișcă mai mult sentimentul decât prețul.', 0: 'Știre despre CZ fără un sens clar.' } },
 ];
+const LEGAT = /\bbitcoin\b|\bBTC\b|crypto|stablecoin|digital asset|blockchain|\bFed\b|interest rates?|tariffs?|\bdollar\b|\bETFs?\b|\bstrategy\b|\bMSTR\b|Binance|Dogecoin|\bDOGE\b/i;
 export function modulInfluentatori(toate) {
   const aparitii = [], pePersoana = {};
   for (const it of toate) {
     const p = PERSOANE.find(p => p.re.some(r => r.test(it.titlu)));
     if (!p || (pePersoana[p.id] || 0) >= 4) continue; // cel mult 4 titluri pe persoană
+    if (!['saylor', 'warsh'].includes(p.id) && !LEGAT.test(it.titlu)) continue;
     pePersoana[p.id] = (pePersoana[p.id] || 0) + 1;
     const x = sens(it.titlu);
     aparitii.push({ cine: p.id, nume: p.nume, rol: p.rol, init: p.init, t: it.t, sursa: it.sursa, titlu: it.titlu, link: it.link, s: x.s, tip: x.tip, concluzie: p.c[x.s], regula: regulaSens(p.cuv, x) });
@@ -233,7 +243,7 @@ export function modulInfluentatori(toate) {
     eticheta: cine.length ? cine.map(p => p.scurt).join(', ') : 'Liniște',
     detaliu: `${plural(aparitii.length, 'titlu', 'titluri')} în ${ZILE_AFISATE} zile`,
     valori: { urmariti: PERSOANE.map(p => ({ id: p.id, scurt: p.scurt, nume: p.nume, rol: p.rol })), aparitii },
-    regula: `titluri care conțin numele urmărite (${PERSOANE.map(p => p.cuv).join(' · ')}) · sensul din aceleași liste de cuvinte ca la știri · doar informativ, nu intră în verdict`,
+    regula: `titluri care conțin numele urmărite (${PERSOANE.map(p => p.cuv).join(' · ')}) și țin de BTC, crypto sau dobânzi · sensul din aceleași liste de cuvinte ca la știri · doar informativ, nu intră în verdict`,
     concluzie: aparitii.length ? `În ultimele ${ZILE_AFISATE} zile: ${rez.join(' · ')}.` : `Niciunul dintre numele urmărite nu apare în titluri în ultimele ${ZILE_AFISATE} zile.`,
     surse: 'aceleași fluxuri RSS ca la știri (X nu e citit: costă pentru fiecare postare)',
   };

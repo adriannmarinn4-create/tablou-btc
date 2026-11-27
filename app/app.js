@@ -692,7 +692,7 @@ ${regula(m)}`);
   let FILTRU = 'toate';
   const SENS = { negativ: ['unfav', '↓ negativ'], pozitiv: ['fav', '↑ pozitiv'], 'mixtă': ['neu', '↕ mixtă'], 'neutră': ['gri', '· neutră'] };
   const titluStire = s => (linkSigur(s.link) ? `<a class="stire-titlu" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">${esc(s.titlu)}</a>` : `<div class="stire-titlu">${esc(s.titlu)}</div>`);
-  const stire = s => `<li class="stire"><div class="stire-meta"><span>${esc(s.sursa)} · ${esc(cand(s.t))}</span>${chip(`impact ${s.impact}`, s.impact === 'mare' ? 'unfav' : 'neu')}</div>
+  const stire = s => `<li class="stire"><div class="stire-meta"><span>${esc(s.sursa)}${s.alte?.length ? ` și încă ${s.alte.length}` : ''} · ${esc(cand(s.t))}</span>${chip(`impact ${s.impact}`, s.impact === 'mare' ? 'unfav' : 'neu')}</div>
 ${titluStire(s)}<div class="chipuri">${chip(s.catNume)}${chip(SENS[s.tip][1], SENS[s.tip][0])}</div>
 <p class="stire-concl">${esc(s.concluzie)}</p><p class="stire-regula">Regulă: ${esc(s.regula)}</p></li>`;
   function ecranStiri() {
