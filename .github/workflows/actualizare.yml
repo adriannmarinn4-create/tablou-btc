@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: actualizare
@@ -50,3 +51,11 @@ jobs:
           git add -A
           git commit -q -m "Date $(date -u +'%Y-%m-%d %H:%M') UTC"
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" site
+
+      # GitHub oprește rulările programate după 60 de zile fără activitate pe ramura main.
+      # Push-urile pe ramura site nu contează, dar reactivarea prin API repornește numărătoarea.
+      - name: Ține rularea programată activă
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/actualizare.yml/enable" && echo "rularea programată rămâne activă" || echo "nu am putut reactiva rularea programată"
