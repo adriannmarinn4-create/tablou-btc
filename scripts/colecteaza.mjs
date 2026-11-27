@@ -184,18 +184,35 @@ function parseBNR(xml, harta) {
     if (u && e) harta.set(m[1], { usdRon: +u[1], eurRon: +e[1] });
   }
 }
-async function sursaCurs() {
+// Cursul oficial BNR pentru azi și pentru datele de care au nevoie randamentele în lei și euro.
+// Datele vechi nu se mai schimbă, așa că le păstrez de la o rulare la alta (fxIstoric).
+async function sursaCurs(datele, cache = {}) {
   const an = ACUM.getUTCFullYear();
+  const cursBnr = async d => {
+    const j = await cere(`https://www.cursbnr.ro/api/v1/rates?currency=EUR,USD${d ? `&date=${d}` : ''}`);
+    return j?.rates?.EUR && j?.rates?.USD ? { data: j.date || d, usdRon: +j.rates.USD, eurRon: +j.rates.EUR } : null;
+  };
   return primaReusita('curs', [
     ['BNR', async () => {
       const harta = new Map();
-      const fisiere = [`https://www.bnr.ro/files/xml/years/nbrfxrates${an - 1}.xml`, `https://www.bnr.ro/files/xml/years/nbrfxrates${an}.xml`, 'https://www.bnr.ro/nbrfxrates.xml'];
-      const r = await Promise.allSettled(fisiere.map(u => cere(u, { tip: 'text' })));
-      r.forEach(x => x.status === 'fulfilled' && parseBNR(x.value, harta));
-      if (harta.size < 5) {
-        const primul = r.find(x => x.status === 'fulfilled')?.value;
-        throw new Error(r.find(x => x.status === 'rejected')?.reason?.message || `fișiere fără cursuri: ${String(primul).slice(0, 160).replace(/\s+/g, ' ')}`);
+      const ult = await cursBnr(null);
+      if (!ult) throw new Error('răspuns fără cursuri');
+      harta.set(ult.data, { usdRon: ult.usdRon, eurRon: ult.eurRon });
+      for (const d of datele) {
+        if (cache[d]?.usdRon) { harta.set(d, cache[d]); continue; }
+        for (let k = 0; k < 5; k++) { // weekend sau sărbătoare: ziua bancară de dinainte
+          const dd = new Date(Date.parse(d) - k * ZI).toISOString().slice(0, 10);
+          const x = await cursBnr(dd).catch(() => null);
+          await somn(300);
+          if (x) { harta.set(d, { usdRon: x.usdRon, eurRon: x.eurRon }); break; }
+        }
       }
+      return { harta };
+    }],
+    ['BNR (XML)', async () => {
+      const harta = new Map();
+      parseBNR(await cere('https://www.bnr.ro/nbrfxrates10days.xml', { tip: 'text' }), harta);
+      if (!harta.size) throw new Error('fișier fără cursuri');
       return { harta };
     }],
     ['BCE (Frankfurter)', async () => {
@@ -812,11 +829,11 @@ async function principal() {
   let prev = null;
   if (ARG.prev) { try { prev = JSON.parse(await readFile(ARG.prev, 'utf8')); } catch { log('fără date anterioare'); } }
 
-  const [rPret, rCm, rCm2, rCurs, rMp, rDvol, rFng, rFund, rStable, rPap, rNod] = await Promise.allSettled([
+  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod] = await Promise.allSettled([
     sursaPret(),
     coinMetricsSigur(['PriceUSD', 'CapMrktCurUSD', 'SplyCur']),
     coinMetricsSigur(['CapMVRVCur', 'IssTotUSD'], '2012-01-01'),
-    sursaCurs(), sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
+    sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
   ]);
   const ok = (r, nume) => { if (r.status === 'fulfilled') { log(`✓ ${nume}`); return r.value; } log(`✗ ${nume}: ${r.reason?.message}`); return null; };
   const D = {
@@ -824,11 +841,6 @@ async function principal() {
     curs: null, mempool: ok(rMp, 'mempool.space') || {}, dvol: ok(rDvol, 'Deribit DVOL'), fng: ok(rFng, 'Fear & Greed'),
     funding: ok(rFund, 'funding'), stable: ok(rStable, 'DefiLlama'), dominanta: ok(rPap, 'CoinPaprika')?.dominanta ?? null, noduri: ok(rNod, 'btcnodes.io'),
   };
-  const curs = ok(rCurs, 'curs valutar');
-  if (curs) {
-    const lista = [...curs.harta.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
-    D.curs = { lista, ultim: lista.at(-1)[1], dataUltim: lista.at(-1)[0], sursa: curs.sursa.startsWith('BNR') ? 'BNR' : 'BCE' };
-  }
   const P = D.cm.PriceUSD;
   if (!D.pret && P?.v?.length) D.pret = { usd: P.v.at(-1), schimbare24h: (P.v.at(-1) / P.v.at(-2) - 1) * 100, sursa: 'Coin Metrics (ieri)' };
   if (!D.pret) throw new Error('fără preț: nu pot calcula nimic');
@@ -840,11 +852,22 @@ async function principal() {
     const sply = D.cm.SplyCur?.v?.at(-1);
     if (sply) D.capAzi = D.pret.usd * sply;
   }
+  // cursul: azi + datele folosite de randamente (7 z, 30 z, 1 ian, 1 an, vârful)
+  const zileCurs = [T - 7 * ZI, T - 30 * ZI, Date.UTC(ACUM.getUTCFullYear() - 1, 11, 31), T - 365 * ZI];
+  if (D.zilnic) { let iA = 0; D.zilnic.v.forEach((x, i) => { if (x > D.zilnic.v[iA]) iA = i; }); zileCurs.push(D.zilnic.z[iA]); }
+  const datele = zileCurs.map(t => new Date(t).toISOString().slice(0, 10));
+  const curs = await sursaCurs(datele, prev?.fxIstoric || {}).then(r => (log('✓ curs valutar'), r)).catch(e => (log(`✗ curs valutar: ${e.message}`), null));
+  if (curs) {
+    const lista = [...curs.harta.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    D.curs = { lista, ultim: lista.at(-1)[1], dataUltim: lista.at(-1)[0], sursa: curs.sursa.startsWith('BNR') ? 'BNR' : 'BCE' };
+    D.fxIstoric = Object.fromEntries(datele.filter(d => curs.harta.has(d)).map(d => [d, curs.harta.get(d)]));
+  }
   const i30 = D.zilnic ? indexLa(D.zilnic.z, T - 30 * ZI) : -1;
   const out = {
     v: 1, generat: ACUM.toISOString(), mock: MOCK || undefined,
     pret: { usd: rot(D.pret.usd, 2), schimbare24h: rot(D.pret.schimbare24h, 2), schimbare30z: i30 >= 0 ? rot((D.pret.usd / D.zilnic.v[i30] - 1) * 100, 1) : null, sursa: D.pret.sursa },
-    fx: D.curs ? { usdRon: D.curs.ultim.usdRon, eurRon: D.curs.ultim.eurRon, data: D.curs.dataUltim, sursa: D.curs.sursa } : null,
+    fx: D.curs ? { usdRon: D.curs.ultim.usdRon, eurRon: rot(D.curs.ultim.eurRon, 4), data: D.curs.dataUltim, sursa: D.curs.sursa } : null,
+    fxIstoric: D.fxIstoric || undefined,
     cap: D.capAzi ? { usd: sig(D.capAzi) } : null,
     module: {}, erori: [],
   };

@@ -175,6 +175,14 @@ export function raspuns(url, tip, T) {
     if (m) return bnr(+m[1], T);
     return bnr(new Date(T).getUTCFullYear(), T).replace(/<Cube[\s\S]*(<Cube date="[^"]+">[\s\S]*?<\/Cube>)<\/Body>/, '$1</Body>');
   }
+  if (u.host === 'www.cursbnr.ro') {
+    const d = u.searchParams.get('date');
+    const t = d ? Date.parse(`${d}T00:00:00Z`) : T - ZI;
+    if (new Date(t).getUTCDay() % 6 === 0) return { date: d, quote: 'RON', rates: { EUR: null, USD: null } };
+    const eurRon = interp([[zi('2025-01-01'), 4.97], [zi('2025-12-31'), 5.09], [zi('2026-11-26'), 5.3442]], t, false);
+    const eurUsd = interp([[zi('2025-01-01'), 1.03], [zi('2025-06-01'), 1.14], [zi('2025-09-15'), 1.17], [zi('2025-12-31'), 1.16], [zi('2026-11-26'), 1.1007]], t, false);
+    return { date: new Date(t).toISOString().slice(0, 10), quote: 'RON', rates: { EUR: +eurRon.toFixed(4), USD: +(eurRon / eurUsd).toFixed(4) } };
+  }
   if (u.host === 'btcnodes.io') {
     const r = rng(3);
     return { count: 200, results: Array.from({ length: 200 }, (_, i) => ({ url: '', timestamp: Math.floor((T - i * 600000) / 1000), total_nodes: Math.round(23800 + (r() - 0.5) * 300), latest_height: 977712 })) };
