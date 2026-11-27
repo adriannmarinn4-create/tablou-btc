@@ -161,6 +161,15 @@ details.neutre summary::-webkit-details-marker { display: none; }
 details.neutre summary::after { content: '▾'; color: var(--muted); }
 details.neutre[open] summary::after { content: '▴'; }
 
+/* Macro */
+.macro-fed { display: flex; flex-direction: column; gap: 2px; }
+.macro-lista { display: flex; flex-direction: column; }
+.macro-rand { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+.macro-rand strong { font-size: 15px; font-weight: 600; }
+.corel-grila { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.corel { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 10px; background: rgba(255, 255, 255, .04); }
+.corel strong { font-size: 18px; font-weight: 600; }
+
 /* Pariuri */
 .pariu { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 46px; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
 .pariu-et { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

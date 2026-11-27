@@ -42,6 +42,7 @@
   const oraRo = t => { const p = parti(t); return `${p.ora}:${p.min}`; };
   const dataScurta = t => { const p = parti(t); return `${p.zi} ${LS[p.luna]} ${p.an}`; };
   const lunaAn = t => { const p = parti(t); return `${LS[p.luna]} ${p.an}`; };
+  const dataLunga = d => { const p = parti(typeof d === 'string' ? Date.parse(`${d}T12:00:00Z`) : d); return `${p.zi} ${LUNI[p.luna]} ${p.an}`; };
   function ziRelativa(t, cuAn) {
     const a = parti(Date.now()), b = parti(t);
     const dz = Math.round((Date.UTC(b.an, b.luna, b.zi) - Date.UTC(a.an, a.luna, a.zi)) / ZI);
@@ -178,7 +179,7 @@
 <path d="M75,78 L${x},${y}" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/><circle cx="75" cy="78" r="5" fill="#FFFFFF"/></svg>`;
   }
   const NUME_PLACI = { 2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu', 6: 'ETF', 7: 'Macro', 8: 'Sentiment', 19: 'Volatilitate', 20: 'Derivate', 28: 'Stablecoins' };
-  const ETAPA = { 7: 'etapa 3' };
+  const ETAPA = {};
   const PAGINA = { 6: '6', 7: '7', 20: '19' }; // unde duce o placă încă goală
   function placa(nr) {
     const m = modul(nr);
@@ -706,16 +707,38 @@ ${svg}
 ${regula(m)}`);
   };
 
-  RAND['7'] = () => {
-    const sec7 = `<section class="card card-gol"><div class="antet">${insigna('7')}<h2>Macro: Fed, dolar, bursă</h2>${chip('etapa 3')}</div><p class="nota">Dobânda Fed, dolarul (DXY), randamentul pe 10 ani și S&amp;P 500 vin de la FRED, care cere o cheie gratuită. Le adaug în etapa 3; atunci rezultatul pariurilor de mai jos intră în scorul modulului.</p></section>`;
-    const m = modul('24');
-    if (!m || m.stare === 'lipsa') return `${sec7}<section class="card card-gol"><div class="antet">${insigna('24')}<h2>Ce prezic pariurile · Polymarket</h2></div><p class="nota">Polymarket nu a răspuns acum. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+  // pariurile Polymarket (24): decizia Fed și pragurile BTC, ca bare
+  function cutiiPariuri(m) {
+    if (!m || m.stare === 'lipsa') return '';
     const f = m.valori.fed, b = m.valori.btc;
     const CUL = { 1: C.portocaliu, '-1': C.albastru, 0: C.galben };
     const bara = (et, p, cul) => `<div class="pariu"><span class="pariu-et">${esc(et)}</span><span class="pariu-bara"><i style="width:${Math.max(1, Math.min(100, p))}%;--c:${cul}"></i></span><strong class="num">${cota(p)}</strong></div>`;
-    const fed = f ? cutie(`Decizia Fed din ${ziLuna(f.decizie)}`, f.volum ? `${nf(f.volum / 1e6)} mil. $ pariați` : '', f.rezultate.map(r => bara(r.eticheta, r.p, CUL[r.dir] ?? C.gri)).join('') + legenda([['patrat', C.portocaliu, 'creștere (rău pentru BTC)'], ['patrat', C.galben, 'pauză'], ['patrat', C.albastru, 'scădere (bine)']])) : '';
-    const btc = b && (b.jos.length || b.sus.length) ? cutie(`BTC până pe ${dataScurta(b.pana)}`, 'atinge pragul?', [...b.sus.slice().reverse().map(x => bara(`↑ urcă la ${usd(x.prag)}`, x.p, C.albastru)), ...b.jos.map(x => bara(`↓ coboară la ${usd(x.prag)}`, x.p, C.portocaliu))].join('')) : '';
-    return sec7 + sectiune(`${antet('24', 'Ce prezic pariurile · Polymarket', m)}${fed}${btc}${regula(m)}`);
+    const fed = f ? cutie(`${insigna('24', 'mica')} Pariuri: decizia Fed din ${ziLuna(f.decizie)}`, f.volum ? `${nf(f.volum / 1e6)} mil. $ pariați` : '', f.rezultate.map(r => bara(r.eticheta, r.p, CUL[r.dir] ?? C.gri)).join('') + legenda([['patrat', C.portocaliu, 'creștere (rău pentru BTC)'], ['patrat', C.galben, 'pauză'], ['patrat', C.albastru, 'scădere (bine)']])) : '';
+    const btc = b && (b.jos.length || b.sus.length) ? cutie(`${insigna('24', 'mica')} Pariuri: BTC până pe ${dataScurta(b.pana)}`, 'atinge pragul?', [...b.sus.slice().reverse().map(x => bara(`↑ urcă la ${usd(x.prag)}`, x.p, C.albastru)), ...b.jos.map(x => bara(`↓ coboară la ${usd(x.prag)}`, x.p, C.portocaliu))].join('')) : '';
+    return fed + btc;
+  }
+
+  RAND['7'] = m => {
+    const m24 = modul('24'), pariuri = cutiiPariuri(m24);
+    if (!m || m.stare === 'lipsa') {
+      return `<section class="card card-gol"><div class="antet">${insigna('7')}<h2>Macro: Fed, dolar, bursă</h2></div><p class="nota">Datele macro nu sunt disponibile acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>${pariuri ? sectiune(`${antet('24', 'Ce prezic pariurile · Polymarket', m24)}${pariuri}${regula(m24)}`) : ''}`;
+    }
+    const v = m.valori, s = v.semnale || {};
+    const fed = v.fed ? `<div class="macro-fed"><div class="gri-txt">Dobânda Fed${v.urmatoare ? ` · decizia următoare: ${esc(ziLuna(v.urmatoare))}, ${esc(oraRo(v.urmatoare))}` : ''}</div>${mare32(`${nf(v.fed.jos, 2)}–${nf(v.fed.sus, 2)}%`)}${v.fed.miscare ? `<p class="nota">ultima mișcare: ${esc(semn(v.fed.miscare.pp, 2))} pp, în vigoare din ${esc(dataLunga(v.fed.miscare.data))}</p>` : ''}</div>` : '';
+    const rand = (t, sub, val, sc) => `<div class="macro-rand"><span class="pr-txt"><span class="pr-t">${esc(t)}</span><span class="pr-s">${esc(sub)}</span></span><strong class="num">${esc(val)}</strong>${sc === 'info' ? chip('info') : fin(sc) ? chipScor(sc) : chip('—')}</div>`;
+    const randuri = [
+      v.dxy && rand('Dolarul (DXY)', `${v.dxy.v > v.dxy.ma200 ? 'peste' : 'sub'} media 200 z (${nf(v.dxy.ma200, 1)})`, nf(v.dxy.v, 1), s.dxy),
+      v.y10 && rand('Randament 10 ani', `${semn(v.y10.ch3, 2)} pp în 3 luni`, `${nf(v.y10.v, 2)}%`, s.y10),
+      v.spx && rand('S&P 500', `${v.spx.v < v.spx.ma50 ? 'sub' : 'peste'} media 50 z (${nf(v.spx.ma50)})`, nf(v.spx.v), s.spx),
+      v.pariu && rand('Fed: pasul următor', `${v.pariu.scurt} (pariuri)`, cota(v.pariu.p), s.fed),
+      v.aur && rand('Aur (prin PAXG)', fin(v.aur.ch30) ? `${pct(v.aur.ch30)} în 30 de zile` : '', usd(v.aur.v), 'info'),
+      v.m2 && rand('Masa monetară M2', 'SUA, față de acum 1 an', fin(v.m2.yoy) ? pct(v.m2.yoy, 1) : '—', 'info'),
+    ].filter(Boolean).join('');
+    const c = v.corelatii || {};
+    const cel = (t, x) => `<div class="corel"><span class="gri-txt">${esc(t)}</span><strong class="num">${fin(x) ? esc(semn(x, 2)) : '—'}</strong></div>`;
+    const corel = cutie('Corelația cu BTC · 30 de zile', '−1 … +1', `<div class="corel-grila">${cel('S&P 500', c.spx)}${cel('Aur', c.aur)}${cel('Dolar (DXY)', c.dxy)}</div>${v.fraza ? `<p class="nota">${esc(v.fraza)}</p>` : ''}`);
+    return sectiune(`<div class="antet">${insigna('7')}${insigna('26')}<h2>Macro: Fed, dolar, bursă</h2>${chipScor(m.scor)}</div>
+${fed}${pariuri}<div class="macro-lista">${randuri}</div>${corel}${regula(m)}`);
   };
 
   function ecranGrafice(nr) {
@@ -806,7 +829,7 @@ ${regula(m10)}`);
 <h3>Termen scurt</h3>
 <table class="tabel">${['6', '7', '8', '9', '19', '20', '28'].map(rand).join('')}</table>
 <p class="formula">media = ${semn(v.scurt.medie, 2)} → <strong>${esc(v.scurt.eticheta || '—')}</strong> (≤ −0,5 negativ, ≥ +0,5 pozitiv, altfel neutru)</p>
-<p class="nota mic">ETF, Macro și Derivatele agregate vin în etapa 3 și nu intră încă în medie.</p>`;
+`;
     deschideDialog(html);
   }
   function arataDespre() {

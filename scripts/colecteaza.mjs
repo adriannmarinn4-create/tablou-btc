@@ -442,6 +442,42 @@ async function sursaDerivate(cache) {
   }
 }
 
+// macro: FRED (cheie gratuită), dolarul DXY calculat din cursurile BCE (Frankfurter) cu formula ICE, aurul prin PAXG (Kraken)
+const FRED = 'https://api.stlouisfed.org/fred/series/observations';
+const ziIso = n => new Date(T - n * ZI).toISOString().slice(0, 10);
+async function serieFred(id, zile, K) {
+  if (!K) throw new Error('lipsește cheia FRED_API_KEY');
+  const j = await cere(`${FRED}?series_id=${id}&api_key=${K}&file_type=json&observation_start=${ziIso(zile)}`);
+  const v = (j.observations || []).filter(o => o.value !== '.' && fin(+o.value)).map(o => [o.date, +o.value]);
+  if (!v.length) throw new Error(`FRED ${id}: fără valori`);
+  return v;
+}
+// DXY după formula ICE, din cursurile BCE (1 euro = x valută)
+const dxyIce = r => 50.14348112 * r.USD ** -0.576 * (r.JPY / r.USD) ** 0.136 * (r.USD / r.GBP) ** -0.119 * (r.CAD / r.USD) ** 0.091 * (r.SEK / r.USD) ** 0.042 * (r.CHF / r.USD) ** 0.036;
+async function sursaMacro() {
+  const K = process.env.FRED_API_KEY || (MOCK ? 'test' : '');
+  const nume = ['Fed (sus)', 'Fed (jos)', 'randament 10 ani', 'S&P 500', 'M2', 'DXY (BCE)', 'aur (PAXG)'];
+  const r = await Promise.allSettled([
+    serieFred('DFEDTARU', 800, K), serieFred('DFEDTARL', 40, K), serieFred('DGS10', 140, K), serieFred('SP500', 120, K), serieFred('M2SL', 430, K),
+    cere(`https://api.frankfurter.dev/v1/${ziIso(460)}..?base=EUR&symbols=USD,JPY,GBP,CAD,SEK,CHF`).then(j => {
+      const v = Object.entries(j.rates || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, x]) => [d, rot(dxyIce(x), 3)]).filter(x => fin(x[1]));
+      if (v.length < 100) throw new Error(`Frankfurter: doar ${v.length} zile`);
+      return v;
+    }),
+    cere('https://api.kraken.com/0/public/OHLC?pair=PAXGUSD&interval=1440').then(j => {
+      if (j.error?.length) throw new Error(`Kraken: ${j.error.join(', ')}`);
+      const a = Object.values(j.result || {}).find(Array.isArray) || [];
+      return a.map(c => [new Date(c[0] * 1000).toISOString().slice(0, 10), +c[4]]).filter(x => fin(x[1]));
+    }),
+  ]);
+  const val = r.map(x => (x.status === 'fulfilled' ? x.value : null));
+  const rele = r.map((x, i) => (x.status === 'rejected' ? `${nume[i]}: ${x.reason?.message}` : null)).filter(Boolean);
+  if (rele.length) log(`macro: lipsesc ${rele.join(' | ')}`);
+  if (val.every(v => !v)) throw new Error('nicio sursă macro nu a răspuns');
+  const [fedSus, fedJos, y10, spx, m2, dxy, aur] = val;
+  return { fedSus, fedJos, y10, spx, m2, dxy, aur };
+}
+
 // companiile-trezorerie (CoinGecko, fără cheie)
 async function sursaTrezorerii() {
   const j = await cere('https://api.coingecko.com/api/v3/companies/public_treasury/bitcoin');
@@ -454,11 +490,11 @@ async function sursaTrezorerii() {
 const NUME = {
   2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu',
   18: 'Randamente', 19: 'Volatilitate', 25: 'Rețea', 27: 'Lei și euro', 28: 'Stablecoins', 8: 'Sentiment',
-  6: 'ETF și companii', 9: 'Știri', 10: 'Influențatori', 24: 'Pariuri', 20: 'Derivate',
+  6: 'ETF și companii', 9: 'Știri', 10: 'Influențatori', 24: 'Pariuri', 20: 'Derivate', 7: 'Macro',
 };
 const TERMEN_LUNG = ['2', '3', '4', '15', '16', '17'];
 const TERMEN_SCURT = ['6', '7', '8', '9', '19', '20', '28'];
-const IN_CURAND = { 7: 'Macro (etapa 3)' };
+const IN_CURAND = {};
 const medieScoruri = semnale => { const s = semnale.filter(fin); return s.length ? rot(medie(s), 2) : null; };
 
 // ---------------------------------------------------------------- module
@@ -1043,6 +1079,75 @@ function modulDerivate(D) {
   };
 }
 
+// 7 · Macro (cu 26 și 24): patru semnale cu scor, plus aur, M2 și corelații doar informative
+const medieSimpla = a => a.reduce((x, y) => x + y, 0) / a.length;
+const laData = (serie, d) => { for (let i = serie.length - 1; i >= 0; i--) if (serie[i][0] <= d) return serie[i]; return null; };
+function pearson(a, b) {
+  const n = a.length, ma = medieSimpla(a), mb = medieSimpla(b);
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+  return saa && sbb ? sab / Math.sqrt(saa * sbb) : null;
+}
+function corelatieBtc(serie, D) { // randamentele zilnice din ultimele 30 de zile, pe zilele comune
+  if (!serie?.length || !D.zilnic) return null;
+  const btc = new Map(D.zilnic.z.map((t, i) => [new Date(t).toISOString().slice(0, 10), D.zilnic.v[i]]));
+  const p = serie.filter(([d]) => d >= ziIso(31)).map(([d, v]) => [v, btc.get(d)]).filter(([a, b]) => fin(a) && fin(b));
+  const ra = [], rb = [];
+  for (let i = 1; i < p.length; i++) { ra.push(Math.log(p[i][0] / p[i - 1][0])); rb.push(Math.log(p[i][1] / p[i - 1][1])); }
+  return ra.length >= 10 ? rot(pearson(ra, rb), 2) : null;
+}
+function modulMacro(D) {
+  const M = D.macro;
+  if (!M) throw new Error('FRED, BCE și Kraken nu au răspuns');
+  const s = {}, v = {};
+  const f = D.pariuriFed;
+  if (f) { const top = f.rezultate[0]; v.pariu = { eticheta: top.eticheta, scurt: top.scurt, p: top.p }; if (top.p > 50 && top.dir != null) s.fed = -top.dir; }
+  if (M.fedSus?.length && M.fedJos?.length) {
+    const sus = M.fedSus.at(-1)[1], jos = M.fedJos.at(-1)[1];
+    let miscare = null;
+    for (let i = M.fedSus.length - 1; i > 0; i--) if (M.fedSus[i][1] !== M.fedSus[i - 1][1]) { miscare = { data: M.fedSus[i][0], pp: rot(M.fedSus[i][1] - M.fedSus[i - 1][1], 2) }; break; }
+    v.fed = { sus, jos, miscare };
+  }
+  v.urmatoare = (D.evenimente || []).filter(e => e.tip === 'FOMC' && e.t > T).sort((a, b) => a.t - b.t)[0]?.t ?? f?.decizie ?? null;
+  if (M.dxy?.length >= 200) { const x = M.dxy.at(-1)[1], ma = medieSimpla(M.dxy.slice(-200).map(q => q[1])); v.dxy = { v: rot(x, 1), ma200: rot(ma, 1), data: M.dxy.at(-1)[0] }; s.dxy = x > ma ? -1 : 1; }
+  if (M.y10?.length) {
+    const [d, x] = M.y10.at(-1), vechi = laData(M.y10, new Date(Date.parse(d) - 91 * ZI).toISOString().slice(0, 10));
+    if (vechi) { const ch = x - vechi[1]; v.y10 = { v: x, ch3: rot(ch, 2), data: d }; s.y10 = ch >= 0.25 ? -1 : ch <= -0.25 ? 1 : 0; }
+  }
+  if (M.spx?.length >= 50) { const [d, x] = M.spx.at(-1), ma = medieSimpla(M.spx.slice(-50).map(q => q[1])); v.spx = { v: x, ma50: rot(ma, 0), data: d }; s.spx = x < ma ? -1 : 1; }
+  if (M.aur?.length) { const [d, x] = M.aur.at(-1), vechi = laData(M.aur, new Date(Date.parse(d) - 30 * ZI).toISOString().slice(0, 10)); v.aur = { v: rot(x, 0), ch30: vechi ? rot((x / vechi[1] - 1) * 100, 1) : null }; }
+  if (M.m2?.length >= 13) { const [d, x] = M.m2.at(-1), an = laData(M.m2, new Date(Date.parse(d) - 360 * ZI).toISOString().slice(0, 10)); v.m2 = { v: rot(x, 0), yoy: an ? rot((x / an[1] - 1) * 100, 1) : null, data: d }; }
+  v.corelatii = { spx: corelatieBtc(M.spx, D), aur: corelatieBtc(M.aur, D), dxy: corelatieBtc(M.dxy, D) };
+  const chei = ['fed', 'dxy', 'y10', 'spx'].filter(k => s[k] != null);
+  if (chei.length < 2) throw new Error('prea puține semnale macro');
+  const scor = rot(medieSimpla(chei.map(k => s[k])), 2);
+  const NEG = { fed: 'Fed-ul pregătește o creștere de dobândă', dxy: 'dolar puternic', y10: 'randamente în creștere', spx: 'bursa slăbește' };
+  const POZ = { fed: 'Fed-ul pregătește o scădere de dobândă', dxy: 'dolar slab', y10: 'randamente în scădere', spx: 'bursa urcă' };
+  const neg = chei.filter(k => s[k] < 0), poz = chei.filter(k => s[k] > 0);
+  let concl = neg.length === chei.length ? `Toate cele ${chei.length} semnale sunt negative: ${neg.map(k => NEG[k]).join(', ')}`
+    : poz.length === chei.length ? `Toate cele ${chei.length} semnale sunt pozitive: ${poz.map(k => POZ[k]).join(', ')}`
+      : [neg.length && `negative: ${neg.map(k => NEG[k]).join(', ')}`, poz.length && `pozitive: ${poz.map(k => POZ[k]).join(', ')}`].filter(Boolean).join('; ').replace(/^./, c => c.toUpperCase()) || 'Semnale neutre';
+  concl += ` (${scorTxt(scor)}).`;
+  if (f) concl += ` Pariurile dau ${cota(f.rezultate[0].p)} pentru „${f.rezultate[0].eticheta}” pe ${ziLuna(f.decizie)}.`;
+  const c = v.corelatii;
+  let fraza = null;
+  if (fin(c.spx)) {
+    fraza = c.spx >= 0.4 ? 'BTC merge acum cu bursa' : c.spx <= -0.4 ? 'BTC merge acum invers față de bursă' : 'BTC merge acum destul de independent de bursă';
+    if (fin(c.dxy) && c.dxy <= -0.3) fraza += ' și invers față de dolar'; else if (fin(c.dxy) && c.dxy >= 0.3) fraza += ' și în același sens cu dolarul';
+    fraza += c.spx >= 0.4 ? ': când bursa scade, BTC are vânt din față.' : '.';
+  }
+  v.fraza = fraza;
+  v.semnale = s;
+  return {
+    scor, eticheta: scor <= -0.5 ? 'Vânt din față' : scor >= 0.5 ? 'Vânt din spate' : 'Mixt',
+    detaliu: `${neg.length} negative · ${poz.length} pozitive din ${chei.length}`,
+    valori: v,
+    regula: 'Fed (rezultatul cu peste 50% la pariuri): creștere −1 · scădere +1 · pauză 0 · dolar (DXY) peste media de 200 de zile −1, sub +1 · randamentul pe 10 ani ±0,25 pp în 3 luni → −1 / +1 · S&P 500 sub media de 50 de zile −1, peste +1 · aurul, M2 și corelațiile sunt doar informative · scorul = media',
+    concluzie: concl,
+    surse: 'FRED (cheie gratuită: dobânda Fed, randamentul pe 10 ani, S&P 500, M2) · BCE prin Frankfurter (DXY calculat cu formula ICE) · Kraken (PAXG, pentru aur) · Polymarket (fără cheie)',
+  };
+}
+
 // ---------------------------------------------------------------- calendar
 function ultimaVineri(an, luna) { // luna 0..11, ora 08:00 UTC (expirarea Deribit)
   const d = new Date(Date.UTC(an, luna + 1, 0, 8));
@@ -1112,20 +1217,21 @@ async function principal() {
   let prev = null;
   if (ARG.prev) { try { prev = JSON.parse(await readFile(ARG.prev, 'utf8')); } catch { log('fără date anterioare'); } }
 
-  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod, rStiri, rPoly, rTrez, rEtf, rDer] = await Promise.allSettled([
+  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod, rStiri, rPoly, rTrez, rEtf, rDer, rMacro] = await Promise.allSettled([
     sursaPret(),
     coinMetricsSigur(['PriceUSD', 'CapMrktCurUSD', 'SplyCur']),
     coinMetricsSigur(['CapMVRVCur', 'IssTotUSD'], '2012-01-01'),
     sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
-    sursaStiri(), sursaPolymarket(), sursaTrezorerii(), sursaEtf(prev?.module?.['6']?.valori?.etf), sursaDerivate(prev?.derivateCache),
+    sursaStiri(), sursaPolymarket(), sursaTrezorerii(), sursaEtf(prev?.module?.['6']?.valori?.etf), sursaDerivate(prev?.derivateCache), sursaMacro(),
   ]);
   const ok = (r, nume) => { if (r.status === 'fulfilled') { log(`✓ ${nume}`); return r.value; } log(`✗ ${nume}: ${r.reason?.message}`); return null; };
   const D = {
     pret: ok(rPret, 'preț'), cm: { ...(ok(rCm, 'Coin Metrics (preț, capitalizare)') || {}), ...(ok(rCm2, 'Coin Metrics (MVRV, emisie)') || {}) },
     curs: null, mempool: ok(rMp, 'mempool.space') || {}, dvol: ok(rDvol, 'Deribit DVOL'), fng: ok(rFng, 'Fear & Greed'),
     funding: ok(rFund, 'funding'), stable: ok(rStable, 'DefiLlama'), dominanta: ok(rPap, 'CoinPaprika')?.dominanta ?? null, noduri: ok(rNod, 'btcnodes.io'),
-    stiri: ok(rStiri, 'știri RSS'), poly: ok(rPoly, 'Polymarket'), trezorerii: ok(rTrez, 'CoinGecko (companii)'), etf: ok(rEtf, 'SoSoValue (ETF)'), derivate: ok(rDer, 'Coinalyze (derivate)'),
+    stiri: ok(rStiri, 'știri RSS'), poly: ok(rPoly, 'Polymarket'), trezorerii: ok(rTrez, 'CoinGecko (companii)'), etf: ok(rEtf, 'SoSoValue (ETF)'), derivate: ok(rDer, 'Coinalyze (derivate)'), macro: ok(rMacro, 'macro (FRED, BCE, Kraken)'),
   };
+  try { D.evenimente = JSON.parse(await readFile(join(DIR, 'evenimente.json'), 'utf8')).evenimente.map(e => ({ t: Date.parse(e.utc), tip: e.tip })); } catch { D.evenimente = []; }
   if (D.etf?.refolosit) log('ETF: refolosesc datele de acum mai puțin de 2 ore (SoSoValue se schimbă o dată pe zi)');
   if (D.derivate?.refolosit) log('Coinalyze: refolosesc datele de acum mai puțin de 2 ore');
   const P = D.cm.PriceUSD;
@@ -1187,10 +1293,11 @@ async function principal() {
   ruleaza('9', D => { if (!D.stiri) throw new Error('fluxurile RSS nu au răspuns'); return modulStiri(D.stiri.toate, T, { scorTxt }); });
   ruleaza('10', D => { if (!D.stiri) throw new Error('fluxurile RSS nu au răspuns'); return modulInfluentatori(D.stiri.toate); });
   ruleaza('24', modulPariuri);
+  D.pariuriFed = out.module['24']?.valori?.fed ?? null;
+  ruleaza('7', modulMacro);
   ruleaza('6', D => modulEtf(D, prev));
   ruleaza('20', modulDerivate);
   out.verdict = verdict(out.module);
-  D.pariuriFed = out.module['24']?.valori?.fed ?? null;
   out.calendar = await calendar(D);
   out.halving = halving(D);
   for (const [nr, m] of Object.entries(out.module)) log(`  ${nr.padStart(2)} ${String(m.nume).padEnd(13)} ${m.stare.padEnd(5)} scor ${m.scor ?? '—'}  ${m.eticheta ?? m.motiv ?? ''}`);

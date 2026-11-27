@@ -192,6 +192,9 @@ export function raspuns(url, tip, T) {
   if (u.host === 'api.coingecko.com') return trezorerii();
   if (u.host === 'openapi.sosovalue.com') return sosovalue(u.pathname, T);
   if (u.host === 'api.coinalyze.net') return coinalyze(u.pathname, u.searchParams, T);
+  if (u.host === 'api.stlouisfed.org') return fred(u.searchParams, T);
+  if (u.host === 'api.frankfurter.dev' && u.searchParams.get('base') === 'EUR') return frankfurterEur(u.pathname, T);
+  if (u.host === 'api.kraken.com' && u.pathname.endsWith('/OHLC')) return krakenOhlc(T);
   throw new Error(`mock: fără răspuns pentru ${url}`);
 }
 
@@ -294,4 +297,28 @@ export function coinalyze(cale, q, T) {
   if (cale.endsWith('/open-interest-history')) return simb.map((symbol, k) => ({ symbol, history: zile.map((t, i) => ({ t, o: 0, h: 0, l: 0, c: (2.6e9 / (k + 1)) * (1 - 0.0045 * i) * (0.98 + r() * 0.04) * 0.6 + (k === 5 && i < 3 ? NaN : 0) })).filter(h => Number.isFinite(h.c)) }));
   if (cale.endsWith('/liquidation-history')) return simb.map((symbol, k) => ({ symbol, history: zile.map(t => ({ t, l: (175e6 / (k + 1)) * (0.6 + r()), s: (45e6 / (k + 1)) * (0.6 + r()) })) }));
   throw new Error(`mock: Coinalyze fără ${cale}`);
+}
+
+// macro: FRED, cursurile BCE (Frankfurter) și PAXG (Kraken)
+const zileLucru = (de, pana) => { const out = []; for (let t = de; t <= pana; t += ZI) { const z = new Date(t).getUTCDay(); if (z % 6) out.push(t); } return out; };
+const isoZi = t => new Date(t).toISOString().slice(0, 10);
+export function fred(q, T) {
+  const id = q.get('series_id'), de = Date.parse(`${q.get('observation_start')}T00:00:00Z`), r = rng(id.length * 7);
+  const obs = (zile, f) => ({ observations: zile.map((t, i) => ({ date: isoZi(t), value: String(f(t, i, zile.length)) })) });
+  if (id === 'DFEDTARU') return obs(zileLucru(de, T - ZI), t => (t >= Date.parse('2026-09-17') ? 4 : 3.75));
+  if (id === 'DFEDTARL') return obs(zileLucru(de, T - ZI), t => (t >= Date.parse('2026-09-17') ? 3.75 : 3.5));
+  if (id === 'DGS10') return obs(zileLucru(de, T - 3 * ZI), (t, i, n) => (4.5 + (0.45 * i) / n + (r() - 0.5) * 0.04).toFixed(2));
+  if (id === 'SP500') return obs(zileLucru(de, T - 3 * ZI), (t, i, n) => (7350 - (250 * Math.max(0, i - n + 25)) / 25 + (r() - 0.5) * 40).toFixed(2));
+  if (id === 'M2SL') { const luni = []; const d = new Date(de); for (let a = d.getUTCFullYear(), l = d.getUTCMonth() + 1; Date.UTC(a, l, 1) < T - 50 * ZI; l++) luni.push(Date.UTC(a, l, 1)); return obs(luni, (t, i) => (22650 + i * 75).toFixed(1)); }
+  throw new Error(`mock: FRED fără ${id}`);
+}
+export function frankfurterEur(cale, T) {
+  const de = Date.parse(`${cale.split('/').pop().replace('..', '')}T00:00:00Z`), r = rng(23), rates = {};
+  zileLucru(de, T - ZI).forEach((t, i, a) => { const k = i / a.length; rates[isoZi(t)] = { USD: +(1.16 - 0.06 * k + (r() - 0.5) * 0.004).toFixed(4), JPY: +(163 + 4 * k).toFixed(2), GBP: +(0.865 + (r() - 0.5) * 0.004).toFixed(4), CAD: +(1.6 - 0.07 * k).toFixed(4), SEK: +(11.1 - 0.2 * k).toFixed(4), CHF: +(0.935 - 0.01 * k).toFixed(4) }; });
+  return { amount: 1, base: 'EUR', rates };
+}
+export function krakenOhlc(T) {
+  const r = rng(29), a = [];
+  for (let t = Math.floor((T - 720 * ZI) / ZI) * ZI; t <= T; t += ZI) { const c = 3600 + 300 * Math.sin(t / (90 * ZI)) + (r() - 0.5) * 30; a.push([t / 1000, '0', '0', '0', c.toFixed(2), '0', '1', 1]); }
+  return { error: [], result: { PAXGUSD: a, last: T / 1000 } };
 }
