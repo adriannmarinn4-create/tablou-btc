@@ -192,7 +192,10 @@ async function sursaCurs() {
       const fisiere = [`https://www.bnr.ro/files/xml/years/nbrfxrates${an - 1}.xml`, `https://www.bnr.ro/files/xml/years/nbrfxrates${an}.xml`, 'https://www.bnr.ro/nbrfxrates.xml'];
       const r = await Promise.allSettled(fisiere.map(u => cere(u, { tip: 'text' })));
       r.forEach(x => x.status === 'fulfilled' && parseBNR(x.value, harta));
-      if (harta.size < 5) throw new Error(r.find(x => x.status === 'rejected')?.reason?.message || 'fișiere goale');
+      if (harta.size < 5) {
+        const primul = r.find(x => x.status === 'fulfilled')?.value;
+        throw new Error(r.find(x => x.status === 'rejected')?.reason?.message || `fișiere fără cursuri: ${String(primul).slice(0, 160).replace(/\s+/g, ' ')}`);
+      }
       return { harta };
     }],
     ['BCE (Frankfurter)', async () => {
