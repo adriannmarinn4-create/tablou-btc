@@ -153,6 +153,12 @@ a.stire-titlu:active { color: var(--accent); }
 .infl { display: flex; align-items: center; gap: 10px; }
 .avatar { width: 34px; height: 34px; border-radius: 17px; background: #2A3240; color: var(--soft); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
 
+details.neutre { border-top: 1px solid var(--border); }
+details.neutre summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 600; color: var(--soft); cursor: pointer; list-style: none; }
+details.neutre summary::-webkit-details-marker { display: none; }
+details.neutre summary::after { content: '▾'; color: var(--muted); }
+details.neutre[open] summary::after { content: '▴'; }
+
 /* Pariuri */
 .pariu { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 46px; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
 .pariu-et { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -196,7 +196,7 @@ export function modulStiri(toate, T, { semn, scorTxt }) {
   }
   const afisate = [...r, ...stiri.filter(s => !s.in48).slice(0, 12)].slice(0, 45);
   return {
-    scor, eticheta, detaliu: parti.join(' · ') || 'nicio știre relevantă',
+    scor, eticheta, detaliu: parti.filter(x => !/neutr/.test(x)).join(' · ') || (r.length ? 'fără știri cu sens clar' : 'nicio știre relevantă'),
     valori: { ore: ORE_SCOR, relevante: r.length, negative: neg, pozitive: poz, mixte: mix, neutre: neu, medie: Math.round(M * 100) / 100, stiri: afisate },
     regula: 'aceeași poveste de la mai multe site-uri contează o dată · categoria din cuvinte-cheie în titlu (ETF, Fed și reglementare = impact mare; securitate, companii, mineri și bănci = impact mediu) · sensul din liste fixe de cuvinte (outflows, sell, hike, hack… = negativ; inflows, buy, rate cut, approve… = pozitiv; ambele = mixtă) · scorul = 2 × media pe 48 de ore, impactul mare contează dublu · sub 3 știri → 0',
     concluzie, surse: `RSS gratuite: ${FLUXURI.map(f => f[0]).join(', ')} (titlurile rămân în engleză)`,

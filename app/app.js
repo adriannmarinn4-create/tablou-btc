@@ -689,7 +689,7 @@ ${regula(m)}`);
   }
 
   // ------------------------------------------------------------ Știri, Calendar
-  let FILTRU = 'toate';
+  let FILTRU = 'toate', NEUTRE_DESCHISE = false;
   const SENS = { negativ: ['unfav', '↓ negativ'], pozitiv: ['fav', '↑ pozitiv'], 'mixtă': ['neu', '↕ mixtă'], 'neutră': ['gri', '· neutră'] };
   const titluStire = s => (linkSigur(s.link) ? `<a class="stire-titlu" href="${esc(s.link)}" target="_blank" rel="noopener noreferrer">${esc(s.titlu)}</a>` : `<div class="stire-titlu">${esc(s.titlu)}</div>`);
   const stire = s => `<li class="stire"><div class="stire-meta"><span>${esc(s.sursa)}${s.alte?.length ? ` și încă ${s.alte.length}` : ''} · ${esc(cand(s.t))}</span>${chip(`impact ${s.impact}`, s.impact === 'mare' ? 'unfav' : 'neu')}</div>
@@ -707,11 +707,13 @@ ${titluStire(s)}<div class="chipuri">${chip(s.catNume)}${chip(SENS[s.tip][1], SE
       if (FILTRU !== 'toate' && FILTRU !== 'mare' && !cats.some(c => c[0] === FILTRU)) FILTRU = 'toate';
       filtre = `<nav class="cipuri-bara" aria-label="Filtre">${[['toate', 'Toate'], ['mare', 'Impact mare'], ...cats].map(([k, t]) => `<button type="button" class="cip${FILTRU === k ? ' activ' : ''}" data-act="filtru" data-f="${esc(k)}" aria-pressed="${FILTRU === k}">${FILTRU === k ? ICON.bifa : ''}${esc(t)}</button>`).join('')}</nav>`;
       const potr = s => FILTRU === 'toate' || (FILTRU === 'mare' ? s.impact === 'mare' : s.cat === FILTRU);
-      const noi = st.filter(s => s.in48 && potr(s)), vechi = st.filter(s => !s.in48 && potr(s));
+      const noi = st.filter(s => s.in48 && potr(s)), vechi = st.filter(s => !s.in48 && potr(s) && s.tip !== 'neutră');
+      const cuSens = noi.filter(s => s.tip !== 'neutră'), neutre = noi.filter(s => s.tip === 'neutră');
+      const pliate = neutre.length ? `<details class="neutre"${NEUTRE_DESCHISE ? ' open' : ''}><summary>${neutre.length === 1 ? '1 știre' : `${neutre.length}${neutre.length % 100 >= 20 ? ' de' : ''} știri`} fără sens clar · nu mută scorul</summary><ul class="stiri">${neutre.map(stire).join('')}</ul></details>` : '';
       const v = m.valori;
       card9 = sectiune(`${antet('9', 'Știri importante', m)}
-<div class="rezumat"><span>Ultimele ${v.ore} h · ${v.relevante === 1 ? '1 știre relevantă' : `${v.relevante} știri relevante`}</span><span>${esc(m.detaliu)}</span></div>
-<ul class="stiri">${noi.map(stire).join('') || `<li class="nota">Nicio știre${FILTRU === 'toate' ? '' : ' pentru filtrul ales'} în ultimele ${v.ore} de ore.</li>`}</ul>
+<div class="rezumat"><span>Ultimele ${v.ore} h · ${v.relevante === 1 ? '1 știre relevantă' : `${v.relevante}${v.relevante % 100 >= 20 ? ' de' : ''} știri relevante`}</span><span>${esc(m.detaliu)}${v.neutre ? ` · ${v.neutre}${v.neutre % 100 >= 20 ? ' de' : ''} ${v.neutre === 1 ? 'neutră' : 'neutre'}` : ''}</span></div>
+<ul class="stiri">${cuSens.map(stire).join('') || `<li class="nota">Nicio știre cu sens clar${FILTRU === 'toate' ? '' : ' pentru filtrul ales'} în ultimele ${v.ore} de ore.</li>`}</ul>${pliate}
 ${vechi.length ? `<h3 class="sub-titlu">Mai vechi · nu intră în scor</h3><ul class="stiri">${vechi.map(stire).join('')}</ul>` : ''}
 ${regula(m)}`);
     }
@@ -850,6 +852,7 @@ ${regula(m10)}`);
     else if (a === 'filtru') { FILTRU = b.dataset.f; deseneaza(true); }
   });
   $('#dialog').addEventListener('click', e => { if (e.target.id === 'dialog') e.target.close(); });
+  document.addEventListener('toggle', e => { if (e.target.matches?.('details.neutre')) NEUTRE_DESCHISE = e.target.open; }, true);
   window.addEventListener('hashchange', () => deseneaza(false));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') reimprospateaza(Date.now() - ULTIMA_INCARCARE > 5 * 60000);
