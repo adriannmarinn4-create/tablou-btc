@@ -42,7 +42,9 @@ Fiecare modul dă un scor între −2 și +2 după praguri fixe; scorul modululu
 
 ## Surse (toate gratuite, fără cheie)
 
-Coin Metrics Community (preț, capitalizare, MVRV, emisie) · mempool.space (hashrate, dificultate, Lightning, comisioane) · Deribit (DVOL) · DefiLlama (stablecoins) · alternative.me (Fear & Greed) · Binance / OKX / Bybit (funding) · CoinPaprika (dominanță) · btcnodes.io (noduri) · BNR (curs lei, euro, dolar) · Coinbase / Kraken (preț).
+Coin Metrics Community (preț, capitalizare, MVRV, emisie) · mempool.space (hashrate, dificultate, Lightning, comisioane) · Deribit (DVOL) · DefiLlama (stablecoins) · alternative.me (Fear & Greed) · Binance / OKX / Bybit (funding) · CoinPaprika (dominanță) · btcnodes.io (noduri) · BNR, preluat prin API-ul cursbnr.ro (curs lei, euro, dolar; rezerve: XML-ul BNR pe 10 zile, apoi BCE prin Frankfurter) · Coinbase / Kraken (preț).
+
+Pe serverele GitHub (în SUA) Binance Futures răspunde cu HTTP 451, așa că funding-ul vine de obicei de la OKX.
 
 ## Calendar
 

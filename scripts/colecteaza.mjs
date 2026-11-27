@@ -213,6 +213,7 @@ async function sursaCurs(datele, cache = {}) {
       const harta = new Map();
       parseBNR(await cere('https://www.bnr.ro/nbrfxrates10days.xml', { tip: 'text' }), harta);
       if (!harta.size) throw new Error('fișier fără cursuri');
+      for (const d of datele) if (!harta.has(d) && cache[d]?.usdRon) harta.set(d, cache[d]); // tot cursuri BNR, din rulările trecute
       return { harta };
     }],
     ['BCE (Frankfurter)', async () => {
@@ -507,7 +508,7 @@ function modulRandamente(D) {
     },
     grafic: { lunare },
     regula: 'fără scor. Sezonalitatea are puțini ani de date, așa că apare ca informație și nu intră în verdict. Randamentele vin din prețul zilnic; coloanele € și lei folosesc cursul din fiecare zi.',
-    concluzie, surse: `Coin Metrics (preț zilnic) · ${D.curs?.sursa === 'BNR' ? 'BNR (curs oficial lei, €, $)' : 'BCE prin Frankfurter (curs)'}`,
+    concluzie, surse: `Coin Metrics (preț zilnic) · ${D.curs?.sursa === 'BNR' ? `BNR (curs oficial lei, €, $, preluat prin ${D.curs.prin})` : 'BCE prin Frankfurter (curs)'}`,
   };
 }
 
@@ -859,9 +860,11 @@ async function principal() {
   const curs = await sursaCurs(datele, prev?.fxIstoric || {}).then(r => (log('✓ curs valutar'), r)).catch(e => (log(`✗ curs valutar: ${e.message}`), null));
   if (curs) {
     const lista = [...curs.harta.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
-    D.curs = { lista, ultim: lista.at(-1)[1], dataUltim: lista.at(-1)[0], sursa: curs.sursa.startsWith('BNR') ? 'BNR' : 'BCE' };
-    D.fxIstoric = Object.fromEntries(datele.filter(d => curs.harta.has(d)).map(d => [d, curs.harta.get(d)]));
-  }
+    const bnr = curs.sursa.startsWith('BNR');
+    D.curs = { lista, ultim: lista.at(-1)[1], dataUltim: lista.at(-1)[0], sursa: bnr ? 'BNR' : 'BCE', prin: { BNR: 'cursbnr.ro', 'BNR (XML)': 'bnr.ro' }[curs.sursa] || 'Frankfurter' };
+    // păstrez doar cursuri BNR, ca să nu amestec BCE cu BNR la rulările următoare
+    D.fxIstoric = bnr ? Object.fromEntries(datele.filter(d => curs.harta.has(d)).map(d => [d, curs.harta.get(d)])) : prev?.fxIstoric;
+  } else D.fxIstoric = prev?.fxIstoric;
   const i30 = D.zilnic ? indexLa(D.zilnic.z, T - 30 * ZI) : -1;
   const out = {
     v: 1, generat: ACUM.toISOString(), mock: MOCK || undefined,

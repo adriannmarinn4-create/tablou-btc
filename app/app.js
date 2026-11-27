@@ -692,7 +692,7 @@ ${regula(m)}`);
     const html = `<h2>Despre Tablou BTC</h2>
 <p>Aplicația adună date despre Bitcoin din surse gratuite și dă pentru fiecare modul o concluzie după reguli fixe, fără AI. Regula care a dat concluzia apare în fiecare card.</p>
 <p>Datele se actualizează automat la 30 de minute, pe GitHub. Prețul din antet vine direct de la Binance, la fiecare minut cât aplicația e deschisă.</p>
-<h3>Surse</h3><p class="nota">Coin Metrics Community · mempool.space · Deribit · DefiLlama · alternative.me · CoinPaprika · btcnodes.io · BNR · Coinbase · Binance</p>
+<h3>Surse</h3><p class="nota">Coin Metrics Community · mempool.space · Deribit · DefiLlama · alternative.me · CoinPaprika · btcnodes.io · BNR (prin cursbnr.ro) · Coinbase · OKX · Binance</p>
 <p class="nota mic">Ultima actualizare: ${esc(cand(Date.parse(DATE.generat)))}${DATE.erori?.length ? ` · ${DATE.erori.length} surse nu au răspuns` : ''}.</p>
 <p class="disclaimer">Informații, nu sfaturi financiare.</p>`;
     deschideDialog(html);
