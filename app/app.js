@@ -4,7 +4,7 @@
 'use strict';
 (() => {
   const ZI = 86400000, GENEZA = Date.UTC(2009, 0, 3), MINUS = '−';
-  const LS = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'noi', 'dec'];
+  const LS = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
   const ZILE = ['dum', 'lun', 'mar', 'mie', 'joi', 'vin', 'sâm'];
   const CURCUBEU = ['#3653A8', '#3F7FD0', '#34A6B5', '#4DB37A', '#A8C54A', '#E3C443', '#F09A3A', '#E5683A', '#C9343F'];
@@ -178,7 +178,7 @@
 <path d="M75,78 L${x},${y}" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/><circle cx="75" cy="78" r="5" fill="#FFFFFF"/></svg>`;
   }
   const NUME_PLACI = { 2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu', 6: 'ETF', 7: 'Macro', 8: 'Sentiment', 19: 'Volatilitate', 20: 'Derivate', 28: 'Stablecoins' };
-  const ETAPA = { 6: 'etapa 3', 7: 'etapa 3', 20: 'etapa 3' };
+  const ETAPA = { 7: 'etapa 3' };
   const PAGINA = { 6: '6', 7: '7', 20: '19' }; // unde duce o placă încă goală
   function placa(nr) {
     const m = modul(nr);
@@ -189,7 +189,7 @@
       return dest ? `<a class="placa placa-gol" href="#grafice/${dest}">${cap}</a>` : `<div class="placa placa-gol">${cap}</div>`;
     }
     const cl = tipScor(m.scor);
-    return `<a class="placa" href="#grafice/${nr}"><span class="placa-cap">${insigna(nr)}<span class="placa-nume">${esc(NUME_PLACI[nr])}</span>${chipScor(m.scor)}</span><span class="placa-val ${cl}">${esc(m.eticheta)}</span><span class="placa-det">${esc(m.detaliu)}</span>${m.stare === 'vechi' ? '<span class="placa-vechi">date vechi</span>' : ''}</a>`;
+    return `<a class="placa" href="#grafice/${PAGINA[nr] || nr}"><span class="placa-cap">${insigna(nr)}<span class="placa-nume">${esc(NUME_PLACI[nr])}</span>${chipScor(m.scor)}</span><span class="placa-val ${cl}">${esc(m.eticheta)}</span><span class="placa-det">${esc(m.detaliu)}</span>${m.stare === 'vechi' ? '<span class="placa-vechi">date vechi</span>' : ''}</a>`;
   }
   function ecranAcasa() {
     const v = DATE.verdict, L = v.lung, S = v.scurt;
@@ -611,9 +611,32 @@ ${regula(m)}`);
 ${chipuri([chip(`realizată 30 z: ${nf(v.realizata30)}%`), chip(`percentila pe 1 an: ${nf(v.percentila)}`, v.percentila >= 90 ? 'fav' : v.percentila <= 10 ? 'unfav' : 'gri')])}
 ${cutie('Volatilitate anualizată · 12 luni · %', `<span class="neu">media anului: ${nf(v.medieAn)}</span>`, svg + legenda([['linie', C.alb, 'DVOL (așteptată, Deribit)'], ['punctat', C.albDeschis, 'realizată 30 z'], ['punctat', C.galben, 'media anului']]))}
 ${regula(m)}`);
-    const sec20 = `<section class="card card-gol"><div class="antet">${insigna('20')}<h2>Derivate pe toate bursele</h2>${chip('etapa 3')}</div><p class="nota">Pozițiile deschise (OI), lichidările și funding-ul agregat de pe toate bursele vin de la Coinalyze, care cere o cheie gratuită. Le adaug în etapa 3.</p></section>`;
-    return sec19 + sec20;
+    return sec19 + sectiuneDerivate(modul('20'));
   };
+
+  function sectiuneDerivate(m) {
+    if (!m || m.stare === 'lipsa') return `<section class="card card-gol"><div class="antet">${insigna('20')}<h2>Derivate pe toate bursele</h2></div><p class="nota">Datele de la Coinalyze nu sunt disponibile acum${m?.motiv ? ` (${esc(m.motiv)})` : ''}. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    const v = m.valori, g = m.grafic;
+    let svgOi = '';
+    if (g.oi?.length > 2) {
+      const pts = g.oi.map(([t, b]) => [zg(t), b / 1000]), x0 = pts[0][0], x1 = pts.at(-1)[0];
+      const [ymin, ymax] = minMax(pts, 0.15);
+      const mij = (ymin + ymax) / 2;
+      svgOi = cutie('OI în BTC · 30 de zile', 'mii BTC', grafic({ h: 100, st: 34, x: { min: x0, max: x1 }, y: { min: ymin, max: ymax }, gridY: [[mij, nf(mij)]], serii: [{ pts, cul: C.alb, gros: 1.8 }], puncte: [{ x: x1, y: pts.at(-1)[1], cul: C.accent }], etX: [[x0, ziLuna(g.oi[0][0]), 'start'], [x1, ziLuna(g.oi.at(-1)[0]), 'end']], label: 'Pozițiile deschise în BTC pe toate bursele, 30 de zile' }));
+    }
+    let svgLq = '';
+    if (g.lich?.length) {
+      const mx = Math.max(1, ...g.lich.flatMap(x => [x[1], x[2]])), n = g.lich.length, bw = 266 / n;
+      const bare = g.lich.map(([t, l, s], i) => { const X = 30 + i * bw, w = Math.max(1, bw / 2 - 1.5), hl = (l / mx) * 56, hs = (s / mx) * 56; return `<rect x="${r1(X)}" y="${r1(62 - hl)}" width="${r1(w)}" height="${r1(Math.max(0.5, hl))}" fill="${C.portocaliu}"/><rect x="${r1(X + w + 1)}" y="${r1(62 - hs)}" width="${r1(w)}" height="${r1(Math.max(0.5, hs))}" fill="${C.albastru}"/><text x="${r1(X + bw / 2 - 0.7)}" y="74" text-anchor="middle">${esc(String(parti(t).zi))}</text>`; }).join('');
+      svgLq = cutie('Lichidări pe zile · 7 zile', `max ${baniApp(mx)}`, `<svg viewBox="0 0 300 78" class="grafic" role="img" aria-label="Lichidări long și short pe ultimele 7 zile"><path d="M30,62H300" stroke="#fff" stroke-opacity=".3"/><g class="et-x">${bare}</g></svg>${legenda([['patrat', C.portocaliu, 'long lichidate'], ['patrat', C.albastru, 'short lichidate']])}`);
+    }
+    return sectiune(`${antet('20', 'Derivate pe toate bursele', m)}${mare32(`${nf(v.oiBtc)} BTC`)}
+<p class="nota">poziții deschise (OI) pe ${v.piete}${v.piete % 100 >= 20 ? ' de' : ''} piețe perpetue BTC</p>
+${chipuri([chip(`${pct(v.oi30)} în 30 z`, v.sOi > 0 ? 'fav' : v.sOi < 0 ? 'unfav' : 'gri'), chip(`prețul ${pct(v.pret30)} în 30 z`), chip(mld(v.oiUsd, 1))])}
+${svgOi}${svgLq}
+${grila([stat('long lichidate 7 z', baniApp(v.L7), '', 'unfav'), stat('short lichidate 7 z', baniApp(v.S7), '', 'fav'), stat('raport long / short', fin(v.raport) ? `${nf(v.raport, 1)}×` : '—', v.sLq > 0 ? 'long mult mai multe' : v.sLq < 0 ? 'short mult mai multe' : 'fără dezechilibru mare', v.sLq > 0 ? 'fav' : v.sLq < 0 ? 'unfav' : '')])}
+${regula(m)}`);
+  }
 
   RAND['8'] = m => {
     const v = m.valori, g = m.grafic, s = v.semnale || {};
@@ -643,8 +666,27 @@ ${regula(m)}`);
   const ziLuna = t => { const p = parti(t); return `${p.zi} ${LS[p.luna]}`; };
   const linkSigur = u => (/^https?:\/\//i.test(u || '') ? u : null);
 
+  const baniApp = v => (!fin(v) ? '—' : `${v < 0 ? MINUS : ''}${Math.abs(v) >= 1e9 ? `${nf(Math.abs(v) / 1e9, 2)} mld $` : `${nf(Math.abs(v) / 1e6)} mil. $`}`);
+  const dataIso = d => Date.parse(`${d}T12:00:00Z`);
+  function sectiuneEtf(m) {
+    const e = m?.valori?.etf;
+    if (!e) return `<section class="card card-gol"><div class="antet">${insigna('6')}<h2>ETF spot din SUA</h2></div><p class="nota">Fluxurile ETF nu sunt disponibile acum. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
+    const ist = e.istoric.slice(-60), n = ist.length, din10 = n - Math.min(10, n);
+    const mx = Math.max(1, ...ist.map(x => Math.abs(x[1])));
+    const bw = 266 / n;
+    const bare = ist.map(([, f], i) => { const h = (Math.abs(f) / mx) * 30; return `<rect x="${r1(30 + i * bw)}" y="${r1(f >= 0 ? 36 - h : 36)}" width="${r1(Math.max(1, bw - 1.2))}" height="${r1(Math.max(0.5, h))}" fill="${f >= 0 ? C.albastru : C.portocaliu}" fill-opacity="${i >= din10 ? 1 : 0.35}"/>`; }).join('');
+    const x10 = r1(30 + din10 * bw);
+    const svg = `<svg viewBox="0 0 300 80" class="grafic" role="img" aria-label="Fluxurile zilnice ale ETF-urilor spot din SUA, ultimele ${n} sesiuni"><path d="M30,36H300" stroke="#fff" stroke-opacity=".3"/><path d="M${x10},2V70" stroke="#fff" stroke-opacity=".25" stroke-dasharray="2 3"/>${bare}<g class="et-y"><text x="2" y="10">+${nf(mx / 1e6)}</text><text x="2" y="68">${MINUS}${nf(mx / 1e6)}</text></g><g class="et-x"><text x="30" y="79">${esc(ziLuna(dataIso(ist[0][0])))}</text><text x="${Math.min(262, x10 + 2)}" y="79">ultimele 10</text><text x="300" y="79" text-anchor="end">${esc(ziLuna(dataIso(ist.at(-1)[0])))}</text></g></svg>`;
+    const randuri = (e.fonduri || []).slice(0, 8).map(f => `<tr><td><strong>${esc(f.ticker)}</strong> <span class="gri-txt">${esc(String(f.nume || '').replace(/\b(Bitcoin|Trust|ETF|Fund|Digital|Holdings)\b/g, '').replace(/\s+/g, ' ').trim())}</span></td><td class="dr num ${f.s10 < 0 ? 'unfav-txt' : f.s10 > 0 ? 'fav-txt' : ''}">${esc(baniApp(f.s10))}</td><td class="dr gri-txt">${fin(f.active) ? esc(mld(f.active, 1)) : '—'}</td></tr>`).join('');
+    return sectiune(`${antet('6', 'ETF spot din SUA', m)}${mare32(baniApp(e.s10))}
+<p class="nota">${e.s10 < 0 ? 'ieșiri' : 'intrări'} nete în ultimele ${e.n10} sesiuni (${esc(ziLuna(dataIso(e.de10)))} – ${esc(ziLuna(dataIso(e.data)))})</p>
+${chipuri([chip(`${ziLuna(dataIso(e.data))}: ${baniApp(e.zi)}`, e.zi < 0 ? 'unfav' : 'fav'), chip(`active ${mld(e.active, 1)}`), chip(`de la lansare ${e.cum >= 0 ? '+' : ''}${baniApp(e.cum)}`)])}
+${cutie('Fluxuri zilnice · mil. $', `${n} sesiuni`, svg + legenda([['patrat', C.albastru, 'intrări'], ['patrat', C.portocaliu, 'ieșiri']]))}
+${randuri ? cutie('Pe fonduri', '10 sesiuni · active', `<table class="tabel"><tbody>${randuri}</tbody></table>`) : ''}`);
+  }
+
   RAND['6'] = m => {
-    const secEtf = `<section class="card card-gol"><div class="antet">${insigna('6')}<h2>ETF spot din SUA</h2>${chip('etapa 3')}</div><p class="nota">Fluxurile zilnice ale ETF-urilor (IBIT, FBTC, GBTC și celelalte) dau scorul modulului: ieșiri de peste 1 mld $ în 10 sesiuni înseamnă −2. Farside blochează serverele GitHub, iar sursa oficială gratuită, SoSoValue, cere o cheie gratuită, așa că fluxurile vin în etapa 3, cu celelalte chei.</p></section>`;
+    const secEtf = sectiuneEtf(m);
     const c = m?.valori?.companii;
     if (!c) return `${secEtf}<section class="card card-gol"><div class="antet">${insigna('6')}<h2>Companii-trezorerie</h2></div><p class="nota">CoinGecko nu a răspuns acum. Sarcina programată reîncearcă la fiecare 30 de minute.</p></section>`;
     const s = c.strategy;

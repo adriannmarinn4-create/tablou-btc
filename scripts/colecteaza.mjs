@@ -67,6 +67,7 @@ const percentila = (vals, x) => (vals.filter(v => v <= x).length / vals.length) 
 
 // formatare în română
 const MINUS = '−';
+const deNr = n => `${n}${n % 100 >= 20 || (n >= 100 && n % 100 === 0) ? ' de' : ''}`; // „24 de piețe”, „3 piețe”
 const NF = new Map();
 const nf = (v, d = 0) => {
   if (!NF.has(d)) NF.set(d, new Intl.NumberFormat('ro-RO', { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -78,7 +79,7 @@ const usd = v => `${nf(v, v < 100 ? 2 : 0)} $`;
 const mld = (v, d) => `${nf(v / 1e9, d ?? (v >= 1e11 ? 0 : 1))} mld $`;
 const scorTxt = s => (s == null ? '—' : (s > 0 ? '+' : s < 0 ? MINUS : '') + nf(Math.abs(s), Number.isInteger(s) ? 0 : 1));
 const LUNI = ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'];
-const LS = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'noi', 'dec'];
+const LS = ['ian', 'feb', 'mar', 'apr', 'mai', 'iun', 'iul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const dataRo = t => { const d = new Date(t); return `${d.getUTCDate()} ${LS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 const lunaAn = t => { const d = new Date(t); return `${LUNI[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 
@@ -87,14 +88,14 @@ const log = (...a) => { const s = a.join(' '); LOG.push(s); console.log(s); };
 
 // ---------------------------------------------------------------- rețea
 const UA = `tablou-btc/1.0 (+https://github.com/${process.env.GITHUB_REPOSITORY || 'tablou-btc'})`;
-async function cere(url, { tip = 'json', incercari = 3, timeout = 30000 } = {}) {
+async function cere(url, { tip = 'json', incercari = 3, timeout = 30000, antet = {} } = {}) {
   if (MOCK) return mock.raspuns(url, tip, T);
   let ultima;
   for (let i = 0; i < incercari; i++) {
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), timeout);
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: tip === 'json' ? 'application/json' : '*/*' }, signal: ctl.signal });
+      const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: tip === 'json' ? 'application/json' : '*/*', ...antet }, signal: ctl.signal });
       if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.reincearca = r.status === 429 || r.status >= 500; throw e; }
       const txt = await r.text();
       return tip === 'json' ? JSON.parse(txt) : txt;
@@ -347,6 +348,68 @@ async function sursaPolymarket() {
   return { fed, btc };
 }
 
+// fluxurile ETF spot din SUA (SoSoValue, cheie gratuită: 10.000 de cereri pe lună).
+// Datele se schimbă o dată pe zi, așa că întreb cel mult o dată la 2 ore și țin singur istoricul (API-ul dă doar ultima lună).
+const SOSO = 'https://openapi.sosovalue.com/openapi/v1';
+async function sursaEtf(vechi) {
+  const K = process.env.SOSOVALUE_API_KEY || (MOCK ? 'test' : '');
+  if (!K) throw new Error('lipsește cheia SOSOVALUE_API_KEY');
+  if (vechi?.preluat && T - vechi.preluat < 2 * 3600000 && vechi.istoric?.length) {
+    return { preluat: vechi.preluat, data: vechi.data, ultim: { d: vechi.data, f: vechi.zi, a: vechi.active, c: vechi.cum, v: vechi.rulaj }, istoric: vechi.istoric, fonduri: vechi.fonduri, fonduriData: vechi.fonduriData, refolosit: true };
+  }
+  const ia = p => cere(`${SOSO}${p}`, { antet: { 'x-soso-api-key': K } }).then(j => {
+    if (j?.code !== 0 || j.data == null) throw new Error(`SoSoValue: cod ${j?.code} ${j?.message || ''}`.trim());
+    return j.data;
+  });
+  const zile = (await ia('/etfs/summary-history?symbol=BTC&country_code=US&limit=300'))
+    .filter(r => r.date && fin(+r.total_net_inflow) && r.total_net_inflow !== null)
+    .map(r => ({ d: r.date, f: +r.total_net_inflow, a: +r.total_net_assets, c: +r.cum_net_inflow, v: +r.total_value_traded }))
+    .sort((a, b) => (a.d < b.d ? -1 : 1));
+  if (!zile.length) throw new Error('SoSoValue: fără zile cu fluxuri');
+  const ist = new Map((vechi?.istoric || []).map(([d, f]) => [d, f]));
+  zile.forEach(z => ist.set(z.d, rot(z.f, -5)));
+  const istoric = [...ist.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-260);
+  const ultim = zile.at(-1);
+  let fonduri = vechi?.fonduri ?? null, fonduriData = vechi?.fonduriData ?? null;
+  if (fonduriData !== ultim.d) { // fondurile, câte unul, doar când apare o zi nouă
+    try {
+      const lista = await ia('/etfs?symbol=BTC&country_code=US');
+      const zile10 = new Set(istoric.slice(-10).map(x => x[0]));
+      const r = await Promise.allSettled(lista.map(e => ia(`/etfs/${encodeURIComponent(e.ticker)}/history`).then(h => ({ e, h }))));
+      const ok = r.filter(x => x.status === 'fulfilled').map(x => x.value);
+      if (ok.length) {
+        fonduri = ok.map(({ e, h }) => {
+          const z = h.filter(x => fin(+x.net_assets) && x.net_assets !== null).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+          return { ticker: e.ticker, nume: e.name, s10: rot(h.filter(x => zile10.has(x.date)).reduce((a, x) => a + (+x.net_inflow || 0), 0), -5), active: z ? rot(+z.net_assets, -6) : null, cota: z ? rot(+z.currency_share, 1) : null };
+        }).sort((a, b) => (b.active ?? 0) - (a.active ?? 0));
+        fonduriData = ultim.d;
+      }
+      if (ok.length < lista.length) log(`ETF: ${lista.length - ok.length} fonduri fără istoric acum`);
+    } catch (e) { log(`ETF: fondurile nu au răspuns (${e.message})`); }
+  }
+  return { preluat: T, data: ultim.d, ultim, istoric, fonduri, fonduriData };
+}
+
+// derivatele pe toate bursele (Coinalyze, cheie gratuită: 40 de cereri pe minut)
+const CZ = 'https://api.coinalyze.net/v1';
+async function sursaDerivate(vechi) {
+  const K = process.env.COINALYZE_API_KEY || (MOCK ? 'test' : '');
+  if (!K) throw new Error('lipsește cheia COINALYZE_API_KEY');
+  const ia = p => cere(`${CZ}${p}`, { antet: { api_key: K }, timeout: 45000 });
+  let piete = vechi?.piete, pieteData = vechi?.pieteData;
+  if (!piete?.length || T - (pieteData || 0) > ZI) { // lista piețelor perpetue BTC (răspuns mare): o dată pe zi
+    const toate = await ia('/future-markets');
+    piete = toate.filter(m => m.base_asset === 'BTC' && m.is_perpetual && /^(USD|USDT|USDC)$/.test(m.quote_asset) && /BTC|XBT/i.test(m.symbol)).map(m => m.symbol);
+    pieteData = T;
+    if (!piete.length) throw new Error('Coinalyze: nicio piață perpetuă BTC');
+  }
+  const acum = Math.floor(T / 1000), loturi = [];
+  for (let i = 0; i < piete.length; i += 20) loturi.push(piete.slice(i, i + 20).join(','));
+  const oi = (await Promise.all(loturi.map(x => ia(`/open-interest-history?symbols=${x}&interval=daily&from=${acum - 40 * 86400}&to=${acum}&convert_to_usd=true`)))).flat();
+  const lq = (await Promise.all(loturi.map(x => ia(`/liquidation-history?symbols=${x}&interval=daily&from=${acum - 9 * 86400}&to=${acum}&convert_to_usd=true`)))).flat();
+  return { piete, pieteData, oi, lq };
+}
+
 // companiile-trezorerie (CoinGecko, fără cheie)
 async function sursaTrezorerii() {
   const j = await cere('https://api.coingecko.com/api/v3/companies/public_treasury/bitcoin');
@@ -359,11 +422,11 @@ async function sursaTrezorerii() {
 const NUME = {
   2: 'Curcubeu', 3: 'On-chain', 4: 'Minerii', 15: 'Capitalizare', 16: 'Power Law', 17: 'Ciclu',
   18: 'Randamente', 19: 'Volatilitate', 25: 'Rețea', 27: 'Lei și euro', 28: 'Stablecoins', 8: 'Sentiment',
-  6: 'ETF și companii', 9: 'Știri', 10: 'Influențatori', 24: 'Pariuri',
+  6: 'ETF și companii', 9: 'Știri', 10: 'Influențatori', 24: 'Pariuri', 20: 'Derivate',
 };
 const TERMEN_LUNG = ['2', '3', '4', '15', '16', '17'];
 const TERMEN_SCURT = ['6', '7', '8', '9', '19', '20', '28'];
-const IN_CURAND = { 6: 'ETF (etapa 3)', 7: 'Macro (etapa 3)', 20: 'Derivate (etapa 3)' };
+const IN_CURAND = { 7: 'Macro (etapa 3)' };
 const medieScoruri = semnale => { const s = semnale.filter(fin); return s.length ? rot(medie(s), 2) : null; };
 
 // ---------------------------------------------------------------- module
@@ -864,10 +927,11 @@ function modulPariuri(D) {
   };
 }
 
-// 6 · ETF și companii-trezorerie — în etapa 2 doar companiile (informativ); fluxurile ETF vin în etapa 3
-function modulEtf(D, prev) {
-  const Z = D.trezorerii;
-  if (!Z) throw new Error('CoinGecko nu a răspuns');
+// 6 · ETF și companii-trezorerie: scorul vine din fluxurile ETF pe 10 sesiuni; companiile sunt informative
+const scorEtf = x => (x <= -1e9 ? -2 : x <= -0.5e9 ? -1 : x >= 1e9 ? 2 : x >= 0.5e9 ? 1 : 0);
+const ET_ETF = { '-2': 'Ieșiri mari', '-1': 'Ieșiri', 0: 'Echilibru', 1: 'Intrări', 2: 'Intrări mari' };
+const bani = x => `${x < 0 ? MINUS : ''}${Math.abs(x) >= 1e9 ? `${nf(Math.abs(x) / 1e9, 2)} mld $` : `${nf(Math.abs(x) / 1e6)} mil. $`}`;
+function parteCompanii(Z, D, prev) {
   const azi = new Date(T).toISOString().slice(0, 10);
   const str = Z.companii.find(c => /^MSTR\b/i.test(c.symbol || '') || /\bStrategy\b/.test(c.name || ''));
   const istoric = (prev?.module?.['6']?.valori?.companii?.istoric || []).filter(x => x[0] !== azi);
@@ -881,17 +945,79 @@ function modulEtf(D, prev) {
   const top = Z.companii.slice(0, 8).map(c => ({ nume: c.name, simbol: String(c.symbol || '').replace(/\.[A-Z]+$/, ''), tara: c.country || null, btc: Math.round(c.total_holdings), cost: cost(c) }));
   const strategy = str ? { btc: Math.round(str.total_holdings), cost: cost(str), fataCost: cost(str) ? rot((D.pret.usd / cost(str) - 1) * 100, 1) : null, ch7: x7?.[2] != null ? Math.round(str.total_holdings - x7[2]) : null, ch30: x30?.[2] != null ? Math.round(str.total_holdings - x30[2]) : null } : null;
   const ch30 = x30 ? Math.round(Z.total - x30[1]) : null, ch7 = x7 ? Math.round(Z.total - x7[1]) : null;
-  let concluzie = `Companiile listate la bursă țin ${nf(Z.total)} BTC${procent ? ` (${nf(procent, 1)}% din toți bitcoinii)` : ''}`;
-  if (ch30 != null) concluzie += `, ${ch30 >= 0 ? '+' : MINUS}${nf(Math.abs(ch30))} BTC în 30 de zile`;
-  else if (ch7 != null) concluzie += `, ${ch7 >= 0 ? '+' : MINUS}${nf(Math.abs(ch7))} BTC în 7 zile`;
-  if (strategy) concluzie += `. Strategy are ${nf(strategy.btc)} BTC${strategy.cost ? `, cumpărați în medie la ${usd(strategy.cost)}; prețul e ${strategy.fataCost < 0 ? `cu ${nf(-strategy.fataCost)}% sub` : `cu ${nf(strategy.fataCost)}% peste`} costul ei` : ''}`;
-  concluzie += '. Fluxurile ETF, care dau scorul, vin în etapa 3.';
+  let text = `Companiile listate la bursă țin ${nf(Z.total)} BTC${procent ? ` (${nf(procent, 1)}% din toți bitcoinii)` : ''}`;
+  if (ch30 != null) text += `, ${ch30 >= 0 ? '+' : MINUS}${nf(Math.abs(ch30))} BTC în 30 de zile`;
+  else if (ch7 != null) text += `, ${ch7 >= 0 ? '+' : MINUS}${nf(Math.abs(ch7))} BTC în 7 zile`;
+  if (strategy) text += `. Strategy are ${nf(strategy.btc)} BTC${strategy.cost ? `, cumpărați în medie la ${usd(strategy.cost)}; prețul e ${strategy.fataCost < 0 ? `cu ${nf(-strategy.fataCost)}% sub` : `cu ${nf(strategy.fataCost)}% peste`} costul ei` : ''}`;
+  return { obiect: { total: Math.round(Z.total), valoare: sig(Z.valoare ?? Z.total * D.pret.usd), procent: rot(procent, 2), ch7, ch30, deLa: ist[0][0], top, strategy, istoric: ist }, text: `${text}.` };
+}
+function modulEtf(D, prev) {
+  const Z = D.trezorerii, E = D.etf;
+  if (!Z && !E) throw new Error('nici SoSoValue, nici CoinGecko nu au răspuns');
+  const C = Z ? parteCompanii(Z, D, prev) : null;
+  const companii = C?.obiect ?? prev?.module?.['6']?.valori?.companii ?? null;
+  const regula = 'suma fluxurilor nete ale ETF-urilor spot din SUA pe ultimele 10 sesiuni — ieșiri peste 1 mld $ → −2, ieșiri între 0,5 și 1 mld $ → −1, intrări între 0,5 și 1 mld $ → +1, intrări peste 1 mld $ → +2, altfel 0 · companiile-trezorerie sunt doar informative';
+  const surse = `${E ? 'SoSoValue (fluxuri ETF, cheie gratuită)' : 'fluxurile ETF: SoSoValue, când merge cheia'} · CoinGecko (companii-trezorerie, fără cheie)`;
+  if (!E) {
+    return {
+      scor: null, partial: true, eticheta: `${nf(companii.total / 1e6, 2)} mil. BTC la companii`, detaliu: 'fluxurile ETF lipsesc acum',
+      valori: { etf: null, companii }, regula, surse,
+      concluzie: `${C?.text ?? ''} Fluxurile ETF, care dau scorul, nu sunt disponibile acum.`.trim(),
+    };
+  }
+  const ult10 = E.istoric.slice(-10), s10 = ult10.reduce((a, x) => a + x[1], 0), scor = scorEtf(s10);
+  const zi = E.ultim.f;
+  const t10 = `În ultimele ${ult10.length} sesiuni (${ziLuna(Date.parse(ult10[0][0]))} – ${ziLuna(Date.parse(ult10.at(-1)[0]))}), ETF-urile spot din SUA au avut ${s10 < 0 ? 'ieșiri' : 'intrări'} nete de ${bani(Math.abs(s10))} (${scorTxt(scor)})`;
+  const tZi = `Ultima zi raportată (${ziLuna(Date.parse(E.data))}): ${zi < 0 ? 'ieșiri' : 'intrări'} de ${bani(Math.abs(zi))}`;
+  const tTot = `De la lansare au intrat net ${bani(E.ultim.c)}, iar activele lor sunt acum ${bani(E.ultim.a)}`;
   return {
-    scor: null, partial: true,
-    eticheta: `${nf(Z.total / 1e6, 2)} mil. BTC la companii`, detaliu: 'fluxurile ETF: etapa 3',
-    valori: { etf: null, companii: { total: Math.round(Z.total), valoare: sig(Z.valoare ?? Z.total * D.pret.usd), procent: rot(procent, 2), ch7, ch30, deLa: ist[0][0], top, strategy, istoric: ist } },
-    regula: 'ETF (din etapa 3): suma fluxurilor nete pe ultimele 10 sesiuni — ieșiri peste 1 mld $ → −2, ieșiri între 0,5 și 1 mld $ → −1, intrări între 0,5 și 1 mld $ → +1, intrări peste 1 mld $ → +2, altfel 0 · companiile-trezorerie sunt doar informative',
-    concluzie, surse: 'CoinGecko (companii-trezorerie, fără cheie) · fluxurile ETF: SoSoValue, din etapa 3 (Farside blochează serverele GitHub)',
+    scor, eticheta: ET_ETF[scor], detaliu: `${bani(s10)} în ${ult10.length} sesiuni`,
+    valori: {
+      etf: { data: E.data, zi, s10: rot(s10, -5), n10: ult10.length, de10: ult10[0][0], cum: rot(E.ultim.c, -6), active: rot(E.ultim.a, -6), rulaj: rot(E.ultim.v, -6), istoric: E.istoric, fonduri: E.fonduri, fonduriData: E.fonduriData, preluat: E.preluat },
+      companii,
+    },
+    regula, surse,
+    concluzie: `${t10}. ${tZi}. ${tTot}.${C ? ` ${C.text}` : ''}`,
+  };
+}
+
+// 20 · Derivate pe toate bursele: OI în BTC pe 30 de zile (doar când prețul a scăzut) și lichidările pe 7 zile
+function modulDerivate(D) {
+  const X = D.derivate;
+  if (!X) throw new Error('Coinalyze nu a răspuns');
+  if (!D.zilnic) throw new Error('lipsește istoricul prețului');
+  const zi0 = Date.UTC(ACUM.getUTCFullYear(), ACUM.getUTCMonth(), ACUM.getUTCDate()) / 1000;
+  // OI: doar piețele care au valori în toate cele 31 de zile, ca suma să nu sară când apare sau dispare o piață
+  const zile = []; for (let k = 30; k >= 0; k--) zile.push(zi0 - k * 86400);
+  const pe = X.oi.map(s => new Map((s.history || []).map(h => [h.t, h.c])));
+  const complete = pe.filter(m => zile.every(t => fin(m.get(t))));
+  if (complete.length < 3) throw new Error(`prea puține piețe cu OI complet (${complete.length})`);
+  const pretLa = t => { const i = indexLa(D.zilnic.z, t * 1000); return i >= 0 ? D.zilnic.v[i] : null; };
+  const serie = zile.map(t => { const usdOi = complete.reduce((a, m) => a + m.get(t), 0); const p = t === zi0 ? D.pret.usd : pretLa(t); return [t * 1000, usdOi, p ? usdOi / p : null]; });
+  const [, oiUsd, oiBtc] = serie.at(-1), oiBtc30 = serie[0][2];
+  const oi30 = (oiBtc / oiBtc30 - 1) * 100;
+  const p30 = pretLa(zile[0]), pret30 = p30 ? (D.pret.usd / p30 - 1) * 100 : null;
+  const sOi = pret30 < 0 && oi30 <= -5 ? 1 : pret30 < 0 && oi30 >= 5 ? -1 : 0;
+  // lichidări: ultimele 7 zile încheiate
+  const lz = new Map();
+  for (const s of X.lq) for (const h of s.history || []) if (h.t < zi0 && h.t >= zi0 - 7 * 86400) { const o = lz.get(h.t) || [0, 0]; o[0] += +h.l || 0; o[1] += +h.s || 0; lz.set(h.t, o); }
+  const lich = [...lz.entries()].sort((a, b) => a[0] - b[0]).map(([t, [l, s]]) => [t * 1000, Math.round(l), Math.round(s)]);
+  const L7 = lich.reduce((a, x) => a + x[1], 0), S7 = lich.reduce((a, x) => a + x[2], 0);
+  const sLq = L7 >= 3 * S7 && L7 > 0 ? 1 : S7 >= 3 * L7 && S7 > 0 ? -1 : 0;
+  const scor = (sOi + sLq) / 2;
+  const raport = S7 > 0 ? L7 / S7 : null;
+  const tOi = `Pe ${deNr(complete.length)} piețe perpetue BTC, pozițiile deschise au ${oi30 < 0 ? 'scăzut' : 'crescut'} cu ${nf(Math.abs(oi30))}% în BTC în 30 de zile, cât prețul a ${pret30 < 0 ? 'scăzut' : 'crescut'} cu ${nf(Math.abs(pret30))}%`;
+  const eOi = sOi > 0 ? ': pârghia se curăță (+1)' : sOi < 0 ? ': se adaugă pârghie într-o piață în scădere (−1)' : ' (0)';
+  const tLq = `În ultimele 7 zile s-au lichidat poziții long de ${bani(L7)} și short de ${bani(S7)}`;
+  const eLq = sLq > 0 ? `, de ${nf(raport, 1)} ori mai multe long (+1)` : sLq < 0 ? `, de ${nf(1 / raport, 1)} ori mai multe short (−1)` : ' (0)';
+  return {
+    scor, eticheta: scor > 0 ? 'Se curăță' : scor < 0 ? 'Pârghie riscantă' : 'Echilibru',
+    detaliu: `OI ${oi30 < 0 ? MINUS : '+'}${nf(Math.abs(oi30))}% în 30 z · lichidări L/S ${raport ? nf(raport, 1) : '—'}`,
+    valori: { oiUsd: sig(oiUsd), oiBtc: Math.round(oiBtc), oi30: rot(oi30, 1), pret30: rot(pret30, 1), sOi, L7, S7, raport: rot(raport, 2), sLq, piete: complete.length },
+    grafic: { oi: serie.map(([t, , b]) => [t, b == null ? null : Math.round(b)]).filter(x => x[1] != null), lich },
+    regula: 'prețul a scăzut în 30 de zile și OI-ul în BTC a scăzut cu cel puțin 5% → +1 (pârghia se curăță) · prețul a scăzut și OI-ul a crescut cu cel puțin 5% → −1 · lichidări long cel puțin de 3 ori cât cele short în 7 zile → +1, invers → −1 · scorul = media celor două',
+    concluzie: `${tOi}${eOi}. ${tLq}${eLq}. Scor: ${scorTxt(scor)}.`,
+    surse: `Coinalyze (cheie gratuită): OI și lichidări pe ${deNr(complete.length)} piețe perpetue BTC de pe mai multe burse`,
   };
 }
 
@@ -964,20 +1090,21 @@ async function principal() {
   let prev = null;
   if (ARG.prev) { try { prev = JSON.parse(await readFile(ARG.prev, 'utf8')); } catch { log('fără date anterioare'); } }
 
-  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod, rStiri, rPoly, rTrez] = await Promise.allSettled([
+  const [rPret, rCm, rCm2, rMp, rDvol, rFng, rFund, rStable, rPap, rNod, rStiri, rPoly, rTrez, rEtf, rDer] = await Promise.allSettled([
     sursaPret(),
     coinMetricsSigur(['PriceUSD', 'CapMrktCurUSD', 'SplyCur']),
     coinMetricsSigur(['CapMVRVCur', 'IssTotUSD'], '2012-01-01'),
     sursaMempool(), sursaDvol(), sursaFng(), sursaFunding(), sursaStablecoins(), sursaPaprika(), sursaNoduri(),
-    sursaStiri(), sursaPolymarket(), sursaTrezorerii(),
+    sursaStiri(), sursaPolymarket(), sursaTrezorerii(), sursaEtf(prev?.module?.['6']?.valori?.etf), sursaDerivate(prev?.derivatePiete),
   ]);
   const ok = (r, nume) => { if (r.status === 'fulfilled') { log(`✓ ${nume}`); return r.value; } log(`✗ ${nume}: ${r.reason?.message}`); return null; };
   const D = {
     pret: ok(rPret, 'preț'), cm: { ...(ok(rCm, 'Coin Metrics (preț, capitalizare)') || {}), ...(ok(rCm2, 'Coin Metrics (MVRV, emisie)') || {}) },
     curs: null, mempool: ok(rMp, 'mempool.space') || {}, dvol: ok(rDvol, 'Deribit DVOL'), fng: ok(rFng, 'Fear & Greed'),
     funding: ok(rFund, 'funding'), stable: ok(rStable, 'DefiLlama'), dominanta: ok(rPap, 'CoinPaprika')?.dominanta ?? null, noduri: ok(rNod, 'btcnodes.io'),
-    stiri: ok(rStiri, 'știri RSS'), poly: ok(rPoly, 'Polymarket'), trezorerii: ok(rTrez, 'CoinGecko (companii)'),
+    stiri: ok(rStiri, 'știri RSS'), poly: ok(rPoly, 'Polymarket'), trezorerii: ok(rTrez, 'CoinGecko (companii)'), etf: ok(rEtf, 'SoSoValue (ETF)'), derivate: ok(rDer, 'Coinalyze (derivate)'),
   };
+  if (D.etf?.refolosit) log('ETF: refolosesc datele de acum mai puțin de 2 ore (SoSoValue se schimbă o dată pe zi)');
   const P = D.cm.PriceUSD;
   if (!D.pret && P?.v?.length) D.pret = { usd: P.v.at(-1), schimbare24h: (P.v.at(-1) / P.v.at(-2) - 1) * 100, sursa: 'Coin Metrics (ieri)' };
   if (!D.pret) throw new Error('fără preț: nu pot calcula nimic');
@@ -1007,6 +1134,7 @@ async function principal() {
     pret: { usd: rot(D.pret.usd, 2), schimbare24h: rot(D.pret.schimbare24h, 2), schimbare30z: i30 >= 0 ? rot((D.pret.usd / D.zilnic.v[i30] - 1) * 100, 1) : null, sursa: D.pret.sursa },
     fx: D.curs ? { usdRon: D.curs.ultim.usdRon, eurRon: rot(D.curs.ultim.eurRon, 4), data: D.curs.dataUltim, sursa: D.curs.sursa } : null,
     fxIstoric: D.fxIstoric || undefined,
+    derivatePiete: D.derivate ? { piete: D.derivate.piete, pieteData: D.derivate.pieteData } : prev?.derivatePiete,
     cap: D.capAzi ? { usd: sig(D.capAzi) } : null,
     module: {}, erori: [],
   };
@@ -1037,6 +1165,7 @@ async function principal() {
   ruleaza('10', D => { if (!D.stiri) throw new Error('fluxurile RSS nu au răspuns'); return modulInfluentatori(D.stiri.toate); });
   ruleaza('24', modulPariuri);
   ruleaza('6', D => modulEtf(D, prev));
+  ruleaza('20', modulDerivate);
   out.verdict = verdict(out.module);
   D.pariuriFed = out.module['24']?.valori?.fed ?? null;
   out.calendar = await calendar(D);

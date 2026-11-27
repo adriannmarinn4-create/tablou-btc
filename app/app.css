@@ -137,6 +137,8 @@ h1, h2, h3 { margin: 0; }
 .verif svg { flex: none; }
 
 .tabel tr.acum { background: rgba(247, 147, 26, .1); }
+.fav-txt { color: #9CC8FF; }
+.unfav-txt { color: #FFB27A; }
 
 /* Știri */
 button.cip { background: none; font-family: inherit; cursor: pointer; }

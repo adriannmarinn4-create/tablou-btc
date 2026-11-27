@@ -190,6 +190,8 @@ export function raspuns(url, tip, T) {
   if (FLUX[u.host]) return rss(FLUX[u.host], u.host === 'news.google.com', T);
   if (u.host === 'gamma-api.polymarket.com') return polymarket(u.searchParams.get('q') || '');
   if (u.host === 'api.coingecko.com') return trezorerii();
+  if (u.host === 'openapi.sosovalue.com') return sosovalue(u.pathname, T);
+  if (u.host === 'api.coinalyze.net') return coinalyze(u.pathname, u.searchParams, T);
   throw new Error(`mock: fără răspuns pentru ${url}`);
 }
 
@@ -250,8 +252,46 @@ function polymarket(q) {
     { slug: 'what-price-will-bitcoin-hit-in-november-2026', title: 'What price will Bitcoin hit in November?', endDate: '2026-12-01T05:00:00Z', closed: false, markets: [] },
   ] };
 }
+// SoSoValue: ultimele 21 de sesiuni, cele mai noi primele, ca API-ul real
+const FONDURI = [['IBIT', 'iShares Bitcoin Trust', 0.62, 44.6e9], ['FBTC', 'Fidelity Wise Origin Bitcoin Fund', 0.16, 12.1e9], ['GBTC', 'Grayscale Bitcoin Trust ETF', 0.08, 9.8e9], ['BTC', 'Grayscale Bitcoin Mini Trust ETF', 0.05, 3.1e9], ['ARKB', 'ARK 21Shares Bitcoin ETF', 0.04, 2.4e9], ['BITB', 'Bitwise Bitcoin ETF', 0.03, 2.6e9], ['HODL', 'VanEck Bitcoin ETF', 0.01, 0.9e9], ['MSBT', 'Morgan Stanley Bitcoin Trust', 0.01, 0.4e9]];
+function sesiuniEtf(T) {
+  const zile = [];
+  for (let t = T - ZI; zile.length < 21; t -= ZI) {
+    const d = new Date(t), z = d.getUTCDay(), s = d.toISOString().slice(0, 10);
+    if (z % 6 === 0 || s === '2026-11-26') continue;
+    zile.push(s);
+  }
+  const r = rng(11);
+  return zile.map((d, i) => ({ d, f: (i < 10 ? -235e6 : 40e6) + (r() - 0.5) * 300e6 }));
+}
+function sosovalue(cale, T) {
+  const S = sesiuniEtf(T), ok = data => ({ code: 0, message: 'success', data, details: null });
+  if (cale.endsWith('/etfs/summary-history')) {
+    let cum = 51.6e9;
+    return ok(S.map(({ d, f }, i) => { const x = { date: d, total_net_inflow: i === 0 ? null : f, total_value_traded: 2.8e9, total_net_assets: 72e9 + i * 1.1e9, cum_net_inflow: cum }; if (i) cum -= f; return x; }));
+  }
+  if (cale.endsWith('/etfs')) return ok(FONDURI.map(([ticker, name]) => ({ ticker, name, exchange: 'NASDAQ' })));
+  const m = /\/etfs\/([^/]+)\/history$/.exec(cale);
+  if (m) {
+    const [, , pondere, active] = FONDURI.find(f => f[0] === m[1]) || [null, null, 0, 0];
+    return ok(S.map(({ d, f }, i) => ({ date: d, ticker: m[1], net_inflow: i === 0 ? null : f * pondere, cum_inflow: null, net_assets: i === 0 ? null : active, currency_share: (active / 72e9) * 100, prem_dsc: 0, value_traded: 1e9, volume: '1' })));
+  }
+  throw new Error(`mock: SoSoValue fără ${cale}`);
+}
 function trezorerii() {
   const c = [['Strategy', 'MSTR.US', 'US', 640250, 47.4e9], ['MARA Holdings', 'MARA.US', 'US', 53250, 3.4e9], ['Twenty One Capital', 'XXI.US', 'US', 43514, 0], ['Metaplanet', '3350.T', 'JP', 30823, 3.3e9], ['Bitcoin Standard Treasury', 'CEPO.US', 'US', 30021, 0], ['Bullish', 'BLSH.US', 'US', 24300, 0], ['Riot Platforms', 'RIOT.US', 'US', 19368, 0], ['Trump Media & Technology Group', 'DJT.US', 'US', 15000, 1.6e9], ['Coinbase Global', 'COIN.US', 'US', 14548, 0], ['Semler Scientific (acquired by Strive)', 'SMLR.US', 'US', 0, 0]];
   const companies = c.map(([name, symbol, country, h, e]) => ({ name, symbol, country, total_holdings: h, total_entry_value_usd: e, total_current_value_usd: h * 61500, percentage_of_total_supply: h / 2.1e5 }));
   return { total_holdings: 1084500, total_value_usd: 66.7e9, market_cap_dominance: 5.16, companies };
+}
+
+// Coinalyze: 24 de piețe perpetue BTC, OI zilnic în USD și lichidări zilnice
+export function coinalyze(cale, q, T) {
+  const piete = ['BTCUSD_PERP.A', 'BTCUSDT_PERP.A', 'BTCUSDC_PERP.A', 'BTCUSDT.6', 'BTCUSD.6', 'BTCPERP.6', 'BTCUSD_PERP.3', 'BTCUSDT_PERP.3', 'BTCUSDT_PERP.4', 'BTCUSD_PERP.4', 'BTC-PERPETUAL.2', 'BTC_USDC-PERPETUAL.2', 'BTCUSDT_PERP.F', 'BTC.H', 'pf_xbtusd.K', 'BTC-USD.8', 'PERP_BTC_USDT.W', 'BTC_USDT.Y', 'BTC_USD.Y', 'BTC-PERP.C', 'BTCUSD.7', 'BTCUSDT.S', 'BTCUSD_PERP.0', 'BTCUSDT_PERP.0'];
+  if (cale.endsWith('/future-markets')) return [...piete.map(symbol => ({ symbol, exchange: symbol.split('.').at(-1), base_asset: 'BTC', quote_asset: /USDT/.test(symbol) ? 'USDT' : /USDC|PERP\.6|\.H|\.C/.test(symbol) ? 'USDC' : 'USD', is_perpetual: true })), { symbol: 'ETHUSDT_PERP.A', base_asset: 'ETH', quote_asset: 'USDT', is_perpetual: true }];
+  const simb = (q.get('symbols') || '').split(','), from = +q.get('from'), to = +q.get('to');
+  const zile = []; for (let t = Math.floor(from / 86400) * 86400; t <= to; t += 86400) zile.push(t);
+  const r = rng(17);
+  if (cale.endsWith('/open-interest-history')) return simb.map((symbol, k) => ({ symbol, history: zile.map((t, i) => ({ t, o: 0, h: 0, l: 0, c: (2.6e9 / (k + 1)) * (1 - 0.0045 * i) * (0.98 + r() * 0.04) * 0.6 + (k === 5 && i < 3 ? NaN : 0) })).filter(h => Number.isFinite(h.c)) }));
+  if (cale.endsWith('/liquidation-history')) return simb.map((symbol, k) => ({ symbol, history: zile.map(t => ({ t, l: (175e6 / (k + 1)) * (0.6 + r()), s: (45e6 / (k + 1)) * (0.6 + r()) })) }));
+  throw new Error(`mock: Coinalyze fără ${cale}`);
 }
